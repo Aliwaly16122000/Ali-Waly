@@ -261,14 +261,20 @@ export function FileDrop({ file, onChange, accept, label = 'اسحب الملف 
 }
 
 // ───────────── Overlays ─────────────
+// Counts open modals so stacked ones (e.g. import result + passwords) never leave the page unscrollable.
+let openModals = 0;
+function lockScroll(delta) {
+  openModals = Math.max(0, openModals + delta);
+  document.body.style.overflow = openModals ? 'hidden' : '';
+}
+
 export function Modal({ open, onClose, title, subtitle, children, footer, size = 'md' }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && onClose?.();
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+    lockScroll(1);
+    return () => { document.removeEventListener('keydown', onKey); lockScroll(-1); };
   }, [open, onClose]);
   if (!open) return null;
   const width = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }[size];
@@ -283,7 +289,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
           </div>
           <IconButton icon={X} label="إغلاق" onClick={onClose} className="-me-2 -mt-1" />
         </div>
-        <div className="px-6 py-5 overflow-y-auto scrollbar-thin">{children}</div>
+        <div className="px-6 py-5 min-h-0 flex-1 overflow-y-auto scrollbar-thin">{children}</div>
         {footer && <div className="px-6 py-4 border-t border-line flex flex-wrap justify-end gap-2 bg-surface-2 rounded-b-2xl">{footer}</div>}
       </div>
     </div>,

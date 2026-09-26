@@ -12,8 +12,11 @@ function TermCard() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    if (data?.current && !form) {
-      const { academic_year, semester, start_date, end_date } = data.current;
+    if (data && !form) {
+      // A fresh install has no term yet: suggest the academic year that's running now.
+      const now = new Date();
+      const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+      const { academic_year = `${y}/${y + 1}`, semester = now.getMonth() >= 7 || now.getMonth() === 0 ? 'fall' : 'spring', start_date, end_date } = data.current || {};
       setForm({ academic_year, semester, start_date: start_date || '', end_date: end_date || '' });
     }
   }, [data, form]);

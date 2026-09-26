@@ -209,6 +209,21 @@ test('chat: students can message their course staff but not other students', asy
   assert.equal((await student2.get(`/chat/conversations/${conv.data.id}`)).status, 404);
 });
 
+test('chat: admin can message anyone, find students by search, and get replies', async () => {
+  const contacts = (await admin.get('/chat/contacts')).data;
+  assert.ok(contacts.some((g) => g.course_id === 'doctor' && g.members.some((m) => m.id === doctor.user.id)));
+  assert.ok(!contacts.some((g) => g.course_id === 'student'), 'students only appear when searching');
+  const found = (await admin.get('/chat/contacts?q=2023030')).data.find((g) => g.course_id === 'student');
+  assert.equal(found.members[0].id, otherStudent.user.id);
+
+  const conv = await admin.post('/chat/conversations', { user_id: otherStudent.user.id });
+  assert.equal(conv.status, 200);
+  const msg = (body) => { const f = new FormData(); f.append('body', body); return f; };
+  assert.equal((await admin.post(`/chat/conversations/${conv.data.id}/messages`, msg('راجع شئون الطلاب'))).status, 201);
+  assert.equal((await otherStudent.post(`/chat/conversations/${conv.data.id}/messages`, msg('حاضر'))).status, 201);
+  assert.equal((await otherStudent.post('/chat/conversations', { user_id: admin.user.id })).status, 200, 'the student can reply to the admin');
+});
+
 test('admin: Excel template round-trip imports students, doctors and TAs with sections', async () => {
   const { default: ExcelJS } = await import('exceljs');
   const tpl = await admin.get('/admin/users/template.xlsx');

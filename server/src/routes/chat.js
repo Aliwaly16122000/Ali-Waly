@@ -13,8 +13,26 @@ const router = Router();
 const ROLE_LABEL = { doctor: 'د.', ta: 'م.', student: '' };
 
 /** People the current user can start a conversation with, grouped by shared course. */
+const ADMIN_GROUPS = [['doctor', 'الدكاترة'], ['ta', 'المعيدين'], ['leader', 'القيادات'], ['student', 'الطلاب']];
+
 router.get('/contacts', (req, res) => {
   const { user } = req;
+  if (user.role === 'admin') {
+    // Staff and leaders are listed in full; students (thousands) only as search results.
+    const q = String(req.query.q || '').trim();
+    const groups = ADMIN_GROUPS.map(([role, label]) => {
+      if (role === 'student' && q.length < 2) return null;
+      const members = db.prepare(`
+        SELECT u.id, u.name, u.role, u.username, d.code AS dept FROM users u LEFT JOIN departments d ON d.id = u.department_id
+        WHERE u.role = ? AND u.is_active = 1 ${role === 'student' ? 'AND (u.name LIKE ? OR u.username LIKE ?)' : ''}
+        ORDER BY u.name LIMIT ${role === 'student' ? 30 : 1000}`).all(role, ...(role === 'student' ? [`%${q}%`, `${q}%`] : []));
+      return members.length ? {
+        course_id: role, course_name: label, course_code: '',
+        members: members.map((m) => ({ id: m.id, name: m.name, role: m.role, section: m.role === 'student' ? m.username : m.dept, online: isOnline(m.id) })),
+      } : null;
+    }).filter(Boolean);
+    return res.json(groups);
+  }
   const rows = user.role === 'student'
     ? db.prepare(`
         SELECT u.id, u.name, u.role, c.id AS course_id, c.name AS course_name, c.code AS course_code
