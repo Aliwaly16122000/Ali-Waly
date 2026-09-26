@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BellRing, KeyRound, User, Smartphone } from 'lucide-react';
+import { BellRing, KeyRound, User, Smartphone, Send, Timer } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -41,9 +41,34 @@ function PushCard() {
             <Button variant={state === 'on' ? 'secondary' : 'primary'} loading={busy} onClick={toggle}>{state === 'on' ? 'إيقاف' : 'تفعيل الإشعارات'}</Button>
           )}
         </div>
+        {state === 'on' && <PushTest />}
         <p className="text-xs text-muted">هيوصلك إشعار لما ينزل شيت أو إعلان أو درجات، لما يتفتح الحضور، ولما حد يبعتلك رسالة.</p>
       </div>
     </Card>
+  );
+}
+
+/** Lets people check delivery themselves, including with the app closed. */
+function PushTest() {
+  const [busy, setBusy] = useState(null);
+  const run = async (delay) => {
+    setBusy(delay);
+    try {
+      const res = await api.post('/notifications/push/test', { delay });
+      if (delay) toast.success(`اقفل التطبيق دلوقتي — الإشعار هييجي بعد ${delay} ثواني`, { duration: 8000 });
+      else if (res.results.every((r) => r.ok)) toast.success('اتبعت ✅ — لو مظهرش، شوف إعدادات الإشعارات للتطبيق في الموبايل');
+      else toast.error(`خدمة الإشعارات رفضت: ${res.results.filter((r) => !r.ok).map((r) => `${r.service} (${r.status ?? r.error})`).join('، ')}`);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" variant="soft" icon={Send} loading={busy === 0} onClick={() => run(0)}>إشعار تجريبي</Button>
+      <Button size="sm" variant="soft" icon={Timer} loading={busy === 10} onClick={() => run(10)}>تجربة والتطبيق مقفول (بعد 10 ثواني)</Button>
+    </div>
   );
 }
 

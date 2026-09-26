@@ -43,3 +43,15 @@ export async function disablePush() {
   await api.post('/notifications/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
   await sub.unsubscribe();
 }
+
+/**
+ * Re-registers this browser's existing subscription with the server for whoever is signed in
+ * now (the server may have dropped it, or another account used this phone before).
+ */
+export async function syncPush() {
+  try {
+    if (!pushSupported() || Notification.permission !== 'granted') return;
+    const sub = await currentSubscription();
+    if (sub) await api.post('/notifications/push/subscribe', sub.toJSON());
+  } catch { /* best effort */ }
+}

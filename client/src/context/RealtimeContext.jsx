@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from './AuthContext';
-import { registerServiceWorker } from '../lib/push';
+import { registerServiceWorker, syncPush } from '../lib/push';
 
 const RealtimeContext = createContext(null);
 
@@ -31,7 +31,7 @@ export function RealtimeProvider({ children }) {
 
   useEffect(() => {
     if (!user) return undefined;
-    registerServiceWorker();
+    registerServiceWorker().then(syncPush);
     refreshCounts();
     const socket = io({ withCredentials: true, transports: ['websocket', 'polling'] });
     socketRef.current = socket;

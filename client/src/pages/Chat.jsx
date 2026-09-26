@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Send, Paperclip, Search, ChevronRight, MessagesSquare, Plus, Download, X, Check, CheckCheck } from 'lucide-react';
+import { Send, Paperclip, Search, ChevronRight, MessagesSquare, Plus, Download, X, Check, CheckCheck, Smile } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, toForm } from '../lib/api';
 import { useApi } from '../lib/useApi';
@@ -9,6 +9,37 @@ import { useRealtime, useSocketEvent } from '../context/RealtimeContext';
 import { ROLE_LABELS, fmtDate, fmtTime, timeAgo, titled } from '../lib/format';
 import { openConversation } from '../lib/chat';
 import { Avatar, Badge, Button, Card, EmptyState, Input, Modal, Spinner, cx } from '../components/ui';
+
+const EMOJIS = ['😀', '😂', '🤣', '😊', '😍', '🥰', '😘', '😉', '😎', '🤩', '🥳', '😇', '🙂', '🤔', '🤗', '😅', '😢', '😭', '😡', '😱',
+  '😴', '🙄', '😬', '🤝', '👍', '👎', '👏', '🙏', '💪', '👌', '✌️', '🤞', '👋', '🫡', '❤️', '💙', '💚', '💛', '🔥', '⭐',
+  '✨', '🎉', '🎊', '💯', '✅', '❌', '⚠️', '❓', '❗', '📌', '📎', '📝', '📚', '📖', '✏️', '📅', '⏰', '🎓', '🏗️', '📐',
+  '📏', '🧮', '💻', '📱', '☕', '🌙', '☀️', '🌹', '🤲', '🕌'];
+
+/** Small emoji palette that inserts at the cursor. */
+function EmojiPicker({ onPick }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button type="button" onClick={() => setOpen((v) => !v)} className={cx('size-11 rounded-xl grid place-items-center hover:bg-surface-2', open ? 'text-brand-500' : 'text-muted')} aria-label="إيموجي">
+        <Smile className="size-5" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full mb-2 right-0 z-20 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-line bg-surface shadow-2xl p-2 grid grid-cols-8 gap-0.5 max-h-60 overflow-y-auto scrollbar-thin">
+          {EMOJIS.map((e) => (
+            <button key={e} type="button" onClick={() => onPick(e)} className="text-xl leading-none size-8 rounded-lg grid place-items-center hover:bg-surface-2">{e}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NewChatModal({ open, onClose }) {
   const { user } = useAuth();
@@ -106,6 +137,7 @@ function Thread({ id, onActivity }) {
   const navigate = useNavigate();
   const [conv, setConv] = useState(null);
   const [text, setText] = useState('');
+  const input = useRef(null);
   const [file, setFile] = useState(null);
   const [sending, setSending] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -165,6 +197,14 @@ function Thread({ id, onActivity }) {
     } finally {
       setSending(false);
     }
+  };
+
+  const insertEmoji = (emoji) => {
+    const el = input.current;
+    const at = el ? el.selectionStart ?? text.length : text.length;
+    const end = el ? el.selectionEnd ?? at : at;
+    onType(text.slice(0, at) + emoji + text.slice(end));
+    requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(at + emoji.length, at + emoji.length); } });
   };
 
   const onType = (v) => {
@@ -229,8 +269,9 @@ function Thread({ id, onActivity }) {
         <div className="flex items-end gap-2">
           <input ref={fileInput} type="file" hidden onChange={(e) => { setFile(e.target.files[0] || null); e.target.value = ''; }} />
           <button type="button" onClick={() => fileInput.current.click()} className="size-11 shrink-0 rounded-xl grid place-items-center text-muted hover:bg-surface-2" aria-label="إرفاق ملف"><Paperclip className="size-5" /></button>
+          <EmojiPicker onPick={insertEmoji} />
           <textarea
-            rows={1} value={text} onChange={(e) => onType(e.target.value)} placeholder="اكتب رسالة…"
+            ref={input} rows={1} value={text} onChange={(e) => onType(e.target.value)} placeholder="اكتب رسالة…"
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             className="flex-1 resize-none max-h-32 rounded-xl border border-line bg-surface-2 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"
           />
