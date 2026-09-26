@@ -152,7 +152,7 @@ router.get('/users', (req, res) => {
   if (level !== undefined && level !== '') { where.push('u.level = ?'); args.push(Number(level)); }
   if (q) { where.push('(u.name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)'); args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   const rows = db.prepare(`
-    SELECT u.id, u.name, u.username, u.email, u.phone, u.role, u.department_id, u.level,
+    SELECT u.id, u.name, u.username, u.email, u.phone, u.role, u.department_id, u.level, u.section,
            u.is_active, u.must_change_password, u.last_login_at, u.created_at, d.name AS department_name,
            sd.bound_at AS device_bound_at, sd.label AS device_label
     FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN student_devices sd ON sd.user_id = u.id
@@ -169,6 +169,7 @@ const userSchema = z.object({
   role: z.enum(ROLES),
   department_id: z.coerce.number().int().positive().nullish(),
   level: z.coerce.number().int().min(0).max(5).nullish(),
+  section: z.coerce.string().trim().max(20).nullish(),
   password: z.string().min(6, 'كلمة المرور يجب ألا تقل عن 6 أحرف').optional().or(z.literal('')),
   is_active: z.boolean().optional(),
 });
@@ -177,10 +178,10 @@ function createUser(u) {
   const password = u.password || generatePassword();
   const hash = bcrypt.hashSync(password, 10);
   const { lastInsertRowid } = db.prepare(`
-    INSERT INTO users (name, username, email, phone, role, department_id, level, password_hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    INSERT INTO users (name, username, email, phone, role, department_id, level, section, password_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     u.name, u.username, u.email || null, u.phone || null, u.role,
-    u.department_id ?? null, u.role === 'student' ? (u.level ?? null) : null, hash,
+    u.department_id ?? null, u.role === 'student' ? (u.level ?? null) : null, u.role === 'student' ? (u.section || null) : null, hash,
   );
   return { id: Number(lastInsertRowid), password };
 }
@@ -205,13 +206,28 @@ const HEADER_ALIASES = {
   phone: ['phone', 'الموبايل', 'الهاتف', 'رقم الموبايل'],
   password: ['password', 'كلمة السر', 'كلمة المرور'],
   role: ['role', 'الصلاحية', 'النوع'],
+  section: ['section', 'السكشن', 'المجموعة', 'الجروب'],
 };
+
+/** Template sheets → the role their rows get when there's no role column. */
+const SHEET_ROLES = { 'الطلاب': 'student', 'الدكاترة': 'doctor', 'المعيدين': 'ta', students: 'student', doctors: 'doctor', tas: 'ta' };
 const ROLE_ALIASES = { طالب: 'student', معيد: 'ta', دكتور: 'doctor', 'عضو هيئة تدريس': 'doctor' };
+
+const LEVEL_NAMES = { 'الإعدادية': 0, 'إعدادي': 0, 'الاعدادية': 0, 'الأولى': 1, 'الفرقة الأولى': 1, 'الثانية': 2, 'الفرقة الثانية': 2,
+  'الثالثة': 3, 'الفرقة الثالثة': 3, 'الرابعة': 4, 'الفرقة الرابعة': 4, 'الخامسة': 5, 'الفرقة الخامسة': 5 };
+/** Accepts 0-5 or the Arabic year name picked from the template's dropdown. */
+function parseLevel(v) {
+  const t = String(v).trim();
+  const lead = t.match(/^(\d)(\s|-|$)/);
+  if (lead) return Number(lead[1]);
+  const hit = Object.entries(LEVEL_NAMES).find(([k]) => t.startsWith(k));
+  return hit ? hit[1] : t;
+}
 
 function normalizeRow(raw) {
   const out = {};
   for (const [key, value] of Object.entries(raw)) {
-    const k = String(key).trim().toLowerCase();
+    const k = String(key).replace(/\*/g, '').trim().toLowerCase();
     const field = Object.entries(HEADER_ALIASES).find(([, aliases]) => aliases.includes(k))?.[0];
     if (field) out[field] = typeof value === 'string' ? value.trim() : value;
   }
@@ -229,22 +245,23 @@ function importUsers(rows) {
     rows.forEach((input, i) => {
       const raw = normalizeRow(input);
       if (!raw.name && !raw.username) return; // blank line
-      const dept = raw.department;
+      const dept = raw.department === undefined || raw.department === null ? raw.department : String(raw.department).split(' - ')[0].trim();
       const department_id = dept === undefined || dept === null || dept === '' ? null
         : Number.isInteger(Number(dept)) ? Number(dept) : deptByCode.get(String(dept).trim().toUpperCase()) ?? deptByCode.get(String(dept).trim()) ?? -1;
-      if (department_id === -1) { errors.push({ row: i + 2, error: `قسم غير معروف: ${dept}` }); return; }
+      if (department_id === -1) { errors.push({ row: input.__row ?? i + 2, sheet: input.__sheet, error: `قسم غير معروف: ${dept}` }); return; }
       const result = userSchema.safeParse({
         name: raw.name, username: String(raw.username ?? '').trim(), email: raw.email || null,
-        phone: raw.phone ? String(raw.phone) : null, role: raw.role || 'student', department_id,
-        level: raw.level === undefined || raw.level === '' || raw.level === null ? null : raw.level,
+        phone: raw.phone ? String(raw.phone) : null, role: raw.role || input.__role || 'student', department_id,
+        level: raw.level === undefined || raw.level === '' || raw.level === null ? null : parseLevel(raw.level),
+        section: raw.section === undefined || raw.section === '' ? null : String(raw.section),
         password: raw.password ? String(raw.password) : undefined,
       });
-      if (!result.success) { errors.push({ row: i + 2, error: result.error.issues[0].message }); return; }
+      if (!result.success) { errors.push({ row: input.__row ?? i + 2, sheet: input.__sheet, error: result.error.issues[0].message }); return; }
       try {
         const { id, password } = createUser(result.data);
         created.push({ id, name: result.data.name, username: result.data.username, password });
       } catch (err) {
-        errors.push({ row: i + 2, error: isUnique(err) ? `الكود ${result.data.username} مسجل بالفعل` : err.message });
+        errors.push({ row: input.__row ?? i + 2, sheet: input.__sheet, error: isUnique(err) ? `الكود ${result.data.username} مسجل بالفعل` : err.message });
       }
     });
   })();
@@ -264,25 +281,101 @@ async function readSpreadsheet(file) {
   }
   if (ext !== '.xlsx') throw badRequest('الملف يجب أن يكون .xlsx أو .csv');
   await wb.xlsx.readFile(file.path);
-  const ws = wb.worksheets[0];
-  if (!ws) return [];
   const cellText = (c) => {
     const v = c.value;
     if (v === null || v === undefined) return '';
     if (typeof v === 'object') return v.text ?? v.result ?? (v.richText ? v.richText.map((t) => t.text).join('') : '');
     return v;
   };
-  const header = [];
-  ws.getRow(1).eachCell({ includeEmpty: true }, (c, i) => { header[i] = String(cellText(c)).trim(); });
+  // Every data sheet is read; in the template each sheet name decides the role.
   const rows = [];
-  ws.eachRow((row, n) => {
-    if (n === 1) return;
-    const obj = {};
-    row.eachCell({ includeEmpty: true }, (c, i) => { if (header[i]) obj[header[i]] = cellText(c); });
-    rows.push(obj);
-  });
+  for (const ws of wb.worksheets) {
+    const name = ws.name.trim();
+    if (['تعليمات', 'الأقسام', 'instructions', 'lists'].includes(name.toLowerCase()) || ws.state !== 'visible') continue;
+    const header = [];
+    ws.getRow(1).eachCell({ includeEmpty: true }, (c, i) => { header[i] = String(cellText(c)).trim(); });
+    if (!header.some(Boolean)) continue;
+    ws.eachRow((row, n) => {
+      if (n === 1) return;
+      const obj = { __row: n, __sheet: name, __role: SHEET_ROLES[name.toLowerCase()] };
+      row.eachCell({ includeEmpty: true }, (c, i) => { if (header[i]) obj[header[i]] = cellText(c); });
+      rows.push(obj);
+    });
+  }
   return rows;
 }
+
+const LEVEL_OPTIONS = ['0 - الإعدادية', '1 - الفرقة الأولى', '2 - الفرقة الثانية', '3 - الفرقة الثالثة', '4 - الفرقة الرابعة', '5 - الفرقة الخامسة'];
+
+/** Excel template with one sheet per role and dropdowns for department and year. */
+router.get('/users/template.xlsx', async (_req, res) => {
+  const depts = db.prepare('SELECT code, name FROM departments ORDER BY name').all();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'EngPortal';
+  const header = (ws, cols) => {
+    ws.columns = cols.map(([h, w]) => ({ header: h, width: w }));
+    ws.views = [{ rightToLeft: true, state: 'frozen', ySplit: 1 }];
+    ws.getRow(1).height = 26;
+    ws.getRow(1).eachCell((c) => {
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D3FA8' } };
+      c.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+  };
+  const listFormula = (col, count) => `'الأقسام'!$${col}$2:$${col}$${Math.max(2, count + 1)}`;
+  const validate = (ws, col, formula, prompt) => {
+    for (let r = 2; r <= 3000; r++) {
+      ws.getCell(`${col}${r}`).dataValidation = {
+        type: 'list', allowBlank: true, formulae: [formula], showErrorMessage: true, errorTitle: 'قيمة غير صحيحة', error: prompt,
+      };
+    }
+  };
+
+  const help = wb.addWorksheet('تعليمات', { views: [{ rightToLeft: true }] });
+  help.getColumn(1).width = 110;
+  [
+    ['📋 طريقة الاستخدام', true],
+    ['1) املأ شيت "الطلاب" و"الدكاترة" و"المعيدين" — كل صف = شخص واحد. سيب أي شيت فاضي لو مش محتاجه.'],
+    ['2) الأعمدة اللي عليها * إجبارية. القسم والفرقة اختارهم من القائمة اللي بتظهر في الخانة.'],
+    ['3) الكود: للطالب الكود الجامعي، وللدكتور/المعيد اسم مستخدم بالإنجليزي (مثلاً d.ahmed أو ta.mona). ده اللي هيسجلوا بيه الدخول.'],
+    ['4) كلمة السر اختيارية — لو سبتها فاضية هتتولد تلقائياً وتقدر تحملها بعد الرفع. أي حد هيُطلب منه يغيرها أول دخول.'],
+    ['5) السكشن اختياري للطلاب (مثلاً: سكشن 1). لما تسجل دفعة كاملة في مادة، كل طالب بيتحط في السكشن بتاعه.'],
+    ['6) احفظ الملف وارفعه من: المستخدمون ← استيراد من Excel.'],
+    [''],
+    ['مثال صف طالب:  محمد أحمد علي | 2024001 | CSE - هندسة الحاسبات | 2 - الفرقة الثانية | سكشن 1 | m.ahmed@mail.com | 01000000000'],
+    ['مثال صف دكتور:  أحمد عبد الرحمن | d.ahmed | CSE - هندسة الحاسبات | a.rahman@eng.edu.eg'],
+  ].forEach(([t, bold]) => { const r = help.addRow([t]); r.font = { name: 'Arial', bold: !!bold, size: bold ? 14 : 11 }; });
+
+  const students = wb.addWorksheet('الطلاب');
+  header(students, [['الاسم بالكامل *', 32], ['الكود الجامعي *', 16], ['القسم *', 34], ['الفرقة *', 20], ['السكشن', 12], ['البريد', 28], ['الموبايل', 16], ['كلمة السر', 14]]);
+  const staffCols = [['الاسم بالكامل *', 32], ['اسم المستخدم *', 18], ['القسم', 34], ['البريد', 28], ['الموبايل', 16], ['كلمة السر', 14]];
+  const doctors = wb.addWorksheet('الدكاترة');
+  header(doctors, staffCols);
+  const tas = wb.addWorksheet('المعيدين');
+  header(tas, staffCols);
+
+  const lists = wb.addWorksheet('الأقسام', { state: 'hidden' });
+  lists.getCell('A1').value = 'القسم';
+  depts.forEach((d, i) => { lists.getCell(`A${i + 2}`).value = `${d.code} - ${d.name}`; });
+  lists.getCell('B1').value = 'الفرقة';
+  LEVEL_OPTIONS.forEach((l, i) => { lists.getCell(`B${i + 2}`).value = l; });
+
+  if (depts.length) {
+    validate(students, 'C', listFormula('A', depts.length), 'اختار القسم من القائمة');
+    validate(doctors, 'C', listFormula('A', depts.length), 'اختار القسم من القائمة');
+    validate(tas, 'C', listFormula('A', depts.length), 'اختار القسم من القائمة');
+  }
+  validate(students, 'D', listFormula('B', LEVEL_OPTIONS.length), 'اختار الفرقة من القائمة');
+  [students, doctors, tas].forEach((ws) => {
+    ws.getColumn(2).numFmt = '@'; // keep codes like 2024001 / 0100… as text
+    ws.getColumn(ws === students ? 7 : 5).numFmt = '@';
+  });
+  wb.views = [{ activeTab: 1 }];
+
+  res.attachment('engportal-users-template.xlsx');
+  await wb.xlsx.write(res);
+  res.end();
+});
 
 /** Import from an uploaded .xlsx/.csv file, or from pasted rows ({ rows: [...] }). */
 router.post('/users/import', upload.single('file'), async (req, res) => {
@@ -328,11 +421,11 @@ router.put('/users/:id', (req, res) => {
   }
   try {
     const r = db.prepare(`
-      UPDATE users SET name = ?, username = ?, email = ?, phone = ?, role = ?, department_id = ?, level = ?,
+      UPDATE users SET name = ?, username = ?, email = ?, phone = ?, role = ?, department_id = ?, level = ?, section = ?,
              is_active = COALESCE(?, is_active)
       WHERE id = ?`).run(
       u.name, u.username, u.email || null, u.phone || null, u.role, u.department_id ?? null,
-      u.role === 'student' ? (u.level ?? null) : null,
+      u.role === 'student' ? (u.level ?? null) : null, u.role === 'student' ? (u.section || null) : null,
       u.is_active === undefined ? null : Number(u.is_active), id,
     );
     if (!r.changes) throw notFound();
@@ -461,9 +554,13 @@ router.get('/courses/:id/enrollments', (req, res) => {
 function enroll(courseId, studentIds, section) {
   const course = db.prepare('SELECT * FROM courses WHERE id = ?').get(courseId);
   if (!course) throw notFound();
-  const isStudent = db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'student'").pluck();
+  const student = db.prepare("SELECT id, section FROM users WHERE id = ? AND role = 'student'");
   const ins = db.prepare('INSERT OR IGNORE INTO enrollments (course_id, student_id, section) VALUES (?, ?, ?)');
-  const added = db.transaction(() => studentIds.filter((id) => isStudent.get(id) && ins.run(courseId, id, section ?? null).changes))();
+  // An explicit section wins; otherwise each student goes into their own default section.
+  const added = db.transaction(() => studentIds.filter((id) => {
+    const st = student.get(id);
+    return st && ins.run(courseId, id, section || st.section || null).changes;
+  }))();
   notify(added, { type: 'course', title: `تم تسجيلك في مادة ${course.name}`, body: course.code, link: `/courses/${courseId}` });
   return added.length;
 }

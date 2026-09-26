@@ -246,6 +246,7 @@ function addColumn(table, column, definition) {
   if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 addColumn('courses', 'grading_scheme', 'TEXT');
+addColumn('users', 'section', 'TEXT'); // student's default section, used when enrolling a cohort
 addColumn('assessments', 'reminded_at', 'TEXT');
 addColumn('attendance_sessions', 'warnings_sent_at', 'TEXT');
 addColumn('attendance_records', 'device_id', 'TEXT');

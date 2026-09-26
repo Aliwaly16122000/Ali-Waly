@@ -208,3 +208,45 @@ test('chat: students can message their course staff but not other students', asy
   assert.equal((await student.post('/chat/conversations', { user_id: student2.user.id })).status, 403);
   assert.equal((await student2.get(`/chat/conversations/${conv.data.id}`)).status, 404);
 });
+
+test('admin: Excel template round-trip imports students, doctors and TAs with sections', async () => {
+  const { default: ExcelJS } = await import('exceljs');
+  const tpl = await admin.get('/admin/users/template.xlsx');
+  assert.equal(tpl.status, 200);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(tpl.data);
+  assert.deepEqual(wb.worksheets.map((w) => w.name), ['تعليمات', 'الطلاب', 'الدكاترة', 'المعيدين', 'الأقسام']);
+  const deptOption = wb.getWorksheet('الأقسام').getCell('A2').value; // e.g. "ARC - الهندسة المعمارية"
+  const cse = wb.getWorksheet('الأقسام').getColumn(1).values.find((v) => typeof v === 'string' && v.startsWith('CSE'));
+
+  // Type into the rows right under the header, like a person filling the sheet.
+  const fill = (sheet, row, values) => values.forEach((v, i) => { wb.getWorksheet(sheet).getCell(row, i + 1).value = v; });
+  fill('الطلاب', 2, ['طالبة من الشيت', '2098001', cse, '2 - الفرقة الثانية', 'سكشن 2', 'x@y.com', '01000000000']);
+  fill('الطلاب', 3, ['بدون قسم صحيح', '2098002', 'ZZZ - غلط', '1 - الفرقة الأولى']);
+  fill('الدكاترة', 2, ['دكتور من الشيت', 'd.sheet', deptOption, 'd@eng.edu.eg']);
+  fill('المعيدين', 2, ['معيد من الشيت', 'ta.sheet', cse]);
+  const buf = await wb.xlsx.writeBuffer();
+
+  const fd = new FormData();
+  fd.append('file', new Blob([buf]), 'users.xlsx');
+  const r = await admin.post('/admin/users/import', fd);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.deepEqual(r.data.created.map((c) => c.username).sort(), ['2098001', 'd.sheet', 'ta.sheet']);
+  assert.equal(r.data.errors.length, 1);
+  assert.equal(r.data.errors[0].sheet, 'الطلاب');
+  assert.equal(r.data.errors[0].row, 3);
+
+  const users = (await admin.get('/admin/users?q=الشيت')).data;
+  const st = users.find((u) => u.username === '2098001');
+  assert.equal(st.role, 'student');
+  assert.equal(st.level, 2);
+  assert.equal(st.section, 'سكشن 2');
+  assert.equal(users.find((u) => u.username === 'd.sheet').role, 'doctor');
+  assert.equal(users.find((u) => u.username === 'ta.sheet').role, 'ta');
+
+  // cohort enrollment puts the student in their own section
+  const course = (await admin.post('/admin/courses', { code: 'CSE201', name: 'مادة تجربة', department_id: st.department_id, level: 2, semester: 'fall', academic_year: '2026/2027' })).data;
+  await admin.post(`/admin/courses/${course.id}/enroll-cohort`, { department_id: st.department_id, level: 2 });
+  const enrolled = (await admin.get(`/admin/courses/${course.id}/enrollments`)).data;
+  assert.equal(enrolled.find((e) => e.username === '2098001').section, 'سكشن 2');
+});

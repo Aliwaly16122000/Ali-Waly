@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Upload, Search, KeyRound, Pencil, Trash2, Download, Copy, UserX, Smartphone } from 'lucide-react';
+import { Plus, Upload, Search, KeyRound, Pencil, Trash2, Download, Copy, UserX, Smartphone, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, toForm } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
@@ -15,7 +15,7 @@ const ROLE_TONE = { admin: 'red', doctor: 'blue', ta: 'violet', student: 'slate'
 
 function UserForm({ initial, departments, onClose, onSaved }) {
   const [form, setForm] = useState(() => initial?.id ? { ...initial, password: '' } : {
-    name: '', username: '', email: '', phone: '', role: initial?.role || 'student', department_id: '', level: '', password: '',
+    name: '', username: '', email: '', phone: '', role: initial?.role || 'student', department_id: '', level: '', section: '', password: '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -26,6 +26,7 @@ function UserForm({ initial, departments, onClose, onSaved }) {
       name: form.name, username: form.username, email: form.email || null, phone: form.phone || null, role: form.role,
       department_id: form.department_id ? Number(form.department_id) : null,
       level: form.role === 'student' && form.level !== '' && form.level !== null ? Number(form.level) : null,
+      section: form.role === 'student' ? (form.section || null) : null,
       ...(form.password ? { password: form.password } : {}),
       ...(initial?.id ? { is_active: !!form.is_active } : {}),
     };
@@ -46,6 +47,7 @@ function UserForm({ initial, departments, onClose, onSaved }) {
         <Field label="الصلاحية">{(id) => <Select id={id} value={form.role} onChange={set('role')}>{Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
         <Field label={form.role === 'student' ? 'الكود الجامعي (اسم المستخدم)' : 'اسم المستخدم'}>{(id) => <Input id={id} dir="ltr" value={form.username} onChange={set('username')} required />}</Field>
         <Field label="القسم">{(id) => <Select id={id} value={form.department_id ?? ''} onChange={set('department_id')}><option value="">—</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
+        {form.role === 'student' && <Field label="السكشن" hint="بيتحط فيه تلقائياً لما يتسجل مع دفعته">{(id) => <Input id={id} value={form.section ?? ''} onChange={set('section')} placeholder="سكشن 1" />}</Field>}
         {form.role === 'student' && <Field label="الفرقة">{(id) => <Select id={id} value={form.level ?? ''} onChange={set('level')}><option value="">—</option>{LEVEL_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}</Select>}</Field>}
         <Field label="البريد الإلكتروني">{(id) => <Input id={id} dir="ltr" type="email" value={form.email ?? ''} onChange={set('email')} />}</Field>
         <Field label="الموبايل">{(id) => <Input id={id} dir="ltr" value={form.phone ?? ''} onChange={set('phone')} />}</Field>
@@ -116,16 +118,21 @@ function ImportModal({ onClose, onDone }) {
     <Modal open onClose={onClose} size="lg" title="استيراد مستخدمين" subtitle="من ملف Excel أو بالنسخ واللصق"
       footer={<><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button icon={Upload} loading={busy} disabled={mode === 'file' ? !file : !text.trim()} onClick={run}>استيراد</Button></>}>
       <Segmented className="mb-4" value={mode} onChange={setMode} options={[{ value: 'file', label: 'ملف Excel / CSV' }, { value: 'paste', label: 'نسخ ولصق' }]} />
-      <Alert tone="blue" className="mb-4" title="شكل الملف">
-        أول صف عناوين الأعمدة: <b>الاسم</b>، <b>الكود</b>، <b>القسم</b> (كود القسم مثل CSE)، <b>الفرقة</b> (0 للإعدادي حتى 5)، واختياري: <b>البريد</b>، <b>الموبايل</b>، <b>كلمة السر</b>، <b>الصلاحية</b> (student / ta / doctor).
-        <button type="button" className="underline font-semibold mr-1" onClick={() => downloadCsv('students-template.csv', [['الاسم', 'الكود', 'القسم', 'الفرقة', 'البريد'], ['محمد أحمد علي', '2024001', 'CSE', '2', 'm.ahmed@example.com']])}>تحميل نموذج</button>
-      </Alert>
+      <div className="rounded-2xl border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10 p-4 mb-4 flex flex-wrap items-center gap-4">
+        <FileSpreadsheet className="size-10 text-emerald-600 shrink-0" />
+        <div className="flex-1 min-w-56">
+          <p className="font-bold">1) حمّل النموذج واملأه</p>
+          <p className="text-sm text-muted">شيت للطلاب وشيت للدكاترة وشيت للمعيدين، والقسم والفرقة بتختارهم من قائمة. كلمة السر اختيارية (بتتولد تلقائياً).</p>
+        </div>
+        <Button as="a" href="/api/admin/users/template.xlsx" icon={Download}>تحميل نموذج Excel</Button>
+      </div>
+      <p className="font-bold mb-2">2) ارفع الملف بعد ما تملاه</p>
       {mode === 'file'
-        ? <FileDrop file={file} onChange={setFile} accept=".xlsx,.csv" hint=".xlsx أو .csv" />
+        ? <FileDrop file={file} onChange={setFile} accept=".xlsx,.csv" hint="النموذج بعد ما تملاه (.xlsx) أو ملف .csv" />
         : <Textarea className="min-h-48 font-mono text-xs" dir="ltr" value={text} onChange={(e) => setText(e.target.value)} placeholder={'الاسم\tالكود\tالقسم\tالفرقة\nمحمد أحمد\t2024001\tCSE\t2'} />}
       {errors.length > 0 && (
         <div className="mt-4 rounded-xl border border-rose-200 dark:border-rose-500/30 max-h-48 overflow-y-auto">
-          {errors.map((e, i) => <p key={i} className="text-sm px-3 py-1.5 border-b border-line last:border-0"><b className="ltr">صف {e.row}:</b> {e.error}</p>)}
+          {errors.map((e, i) => <p key={i} className="text-sm px-3 py-1.5 border-b border-line last:border-0"><b>{e.sheet ? `شيت ${e.sheet} · ` : ''}صف {e.row}:</b> {e.error}</p>)}
         </div>
       )}
     </Modal>
@@ -212,7 +219,7 @@ export default function Users() {
                   </Td>
                   <Td className="ltr text-right">{u.username}</Td>
                   <Td className="text-muted">{u.department_name || '—'}</Td>
-                  {role === 'student' && <Td className="text-muted whitespace-nowrap">{LEVEL_LABELS[u.level] ?? '—'}</Td>}
+                  {role === 'student' && <Td className="text-muted whitespace-nowrap">{LEVEL_LABELS[u.level] ?? '—'}{u.section && <span className="block text-xs">{u.section}</span>}</Td>}
                   {role === 'student' && (
                     <Td className="whitespace-nowrap">
                       {u.device_bound_at ? (
