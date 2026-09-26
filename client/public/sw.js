@@ -17,6 +17,9 @@ self.addEventListener('push', (event) => {
       dir: 'rtl',
       lang: 'ar',
       tag: data.tag,
+      renotify: !!data.tag, // ring/vibrate even when it replaces an older notification
+      vibrate: [200, 100, 200],
+      timestamp: Date.now(),
       data: { link: data.link || '/' },
     }),
   );

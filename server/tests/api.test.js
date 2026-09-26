@@ -224,6 +224,12 @@ test('chat: admin can message anyone, find students by search, and get replies',
   assert.equal((await otherStudent.post('/chat/conversations', { user_id: admin.user.id })).status, 200, 'the student can reply to the admin');
 });
 
+test('push: test notification explains when no device is subscribed', async () => {
+  const r = await student2.post('/notifications/push/test', { delay: 0 });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /تفعيل الإشعارات/);
+});
+
 test('admin: Excel template round-trip imports students, doctors and TAs with sections', async () => {
   const { default: ExcelJS } = await import('exceljs');
   const tpl = await admin.get('/admin/users/template.xlsx');
