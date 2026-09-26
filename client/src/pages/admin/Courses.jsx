@@ -1,0 +1,110 @@
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus, Search, Library, Users, Pencil, ChevronLeft } from 'lucide-react';
+import { toast } from 'sonner';
+import { api } from '../../lib/api';
+import { useApi } from '../../lib/useApi';
+import { LEVEL_LABELS, SEMESTER_LABELS, titled } from '../../lib/format';
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, PageHeader, PageLoader, Select, Table, Td, Textarea, Th } from '../../components/ui';
+
+const currentYear = () => {
+  const d = new Date();
+  const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}/${y + 1}`;
+};
+
+export function CourseForm({ initial, departments, onClose, onSaved }) {
+  const [form, setForm] = useState(() => initial ?? {
+    code: '', name: '', department_id: '', level: '', semester: new Date().getMonth() >= 7 || new Date().getMonth() < 1 ? 'fall' : 'spring',
+    academic_year: currentYear(), credit_hours: 3, description: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const body = {
+      code: form.code, name: form.name, semester: form.semester, academic_year: form.academic_year,
+      department_id: form.department_id ? Number(form.department_id) : null,
+      level: form.level === '' || form.level === null ? null : Number(form.level),
+      credit_hours: Number(form.credit_hours), description: form.description || null,
+    };
+    try {
+      const res = initial?.id ? await api.put(`/admin/courses/${initial.id}`, body) : await api.post('/admin/courses', body);
+      toast.success('تم الحفظ');
+      onSaved(res);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal open onClose={onClose} size="lg" title={initial?.id ? 'تعديل المادة' : 'مادة جديدة'}
+      footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="course-form" type="submit" loading={saving}>حفظ</Button></>}>
+      <form id="course-form" onSubmit={submit} className="grid sm:grid-cols-2 gap-4">
+        <Field label="اسم المادة" className="sm:col-span-2">{(id) => <Input id={id} value={form.name} onChange={set('name')} required placeholder="هياكل البيانات" />}</Field>
+        <Field label="كود المادة">{(id) => <Input id={id} dir="ltr" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} required placeholder="CSE321" />}</Field>
+        <Field label="الساعات المعتمدة">{(id) => <Input id={id} type="number" min="0" max="12" dir="ltr" value={form.credit_hours} onChange={set('credit_hours')} />}</Field>
+        <Field label="القسم">{(id) => <Select id={id} value={form.department_id ?? ''} onChange={set('department_id')}><option value="">—</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
+        <Field label="الفرقة">{(id) => <Select id={id} value={form.level ?? ''} onChange={set('level')}><option value="">—</option>{LEVEL_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}</Select>}</Field>
+        <Field label="الترم">{(id) => <Select id={id} value={form.semester} onChange={set('semester')}>{Object.entries(SEMESTER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
+        <Field label="العام الدراسي">{(id) => <Input id={id} dir="ltr" value={form.academic_year} onChange={set('academic_year')} required pattern="\d{4}/\d{4}" />}</Field>
+        <Field label="وصف المادة" className="sm:col-span-2">{(id) => <Textarea id={id} value={form.description ?? ''} onChange={set('description')} />}</Field>
+      </form>
+    </Modal>
+  );
+}
+
+export default function AdminCourses() {
+  const { data, error, loading, reload } = useApi('/admin/courses');
+  const { data: departments } = useApi('/admin/departments');
+  const [dept, setDept] = useState('');
+  const [q, setQ] = useState('');
+  const [editing, setEditing] = useState(null);
+  const list = useMemo(() => (data || []).filter((c) => (!dept || c.department_id === Number(dept)) && (!q || c.name.includes(q) || c.code.includes(q.toUpperCase()))), [data, dept, q]);
+
+  return (
+    <>
+      <PageHeader title="المواد والتسجيل" subtitle="أنشئ المواد، أسند الدكاترة والمعيدين، وسجّل الطلاب" actions={<Button icon={Plus} onClick={() => setEditing({})}>مادة جديدة</Button>} />
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap gap-3 p-4 border-b border-line">
+          <div className="relative flex-1 min-w-48">
+            <Search className="size-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
+            <Input className="pr-9" placeholder="بحث بالاسم أو الكود" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <Select className="w-56" value={dept} onChange={(e) => setDept(e.target.value)}>
+            <option value="">كل الأقسام</option>{(departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </Select>
+        </div>
+        {loading && !data ? <PageLoader /> : error ? <ErrorState error={error} onRetry={reload} /> : !list.length ? <EmptyState icon={Library} title="لا توجد مواد" /> : (
+          <Table>
+            <thead><tr><Th>المادة</Th><Th>القسم / الفرقة</Th><Th>الترم</Th><Th>هيئة التدريس</Th><Th>الطلاب</Th><Th /></tr></thead>
+            <tbody>
+              {list.map((c) => (
+                <tr key={c.id} className="hover:bg-surface-2">
+                  <Td><p className="font-semibold">{c.name}</p><p className="text-xs text-muted ltr text-right">{c.code} · {c.credit_hours} ساعات</p></Td>
+                  <Td className="text-muted"><p>{c.department_name || '—'}</p><p className="text-xs">{LEVEL_LABELS[c.level] ?? ''}</p></Td>
+                  <Td className="text-muted whitespace-nowrap text-xs">{SEMESTER_LABELS[c.semester]}<br /><span className="ltr">{c.academic_year}</span></Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-1 max-w-72">
+                      {c.staff.length ? c.staff.map((s) => <Badge key={s.id} tone={s.role === 'doctor' ? 'blue' : 'violet'}>{titled(s)}</Badge>) : <Badge tone="red">بدون دكتور</Badge>}
+                    </div>
+                  </Td>
+                  <Td><Badge tone={c.students_count ? 'green' : 'amber'}><Users className="size-3" /> {c.students_count}</Badge></Td>
+                  <Td>
+                    <div className="flex justify-end gap-1">
+                      <button className="p-2 rounded-lg text-muted hover:bg-surface-2" onClick={() => setEditing(c)} title="تعديل"><Pencil className="size-4" /></button>
+                      <Button size="sm" variant="soft" to={`/admin/courses/${c.id}`}>إدارة <ChevronLeft className="size-4" /></Button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+      {editing && <CourseForm initial={editing.id ? editing : null} departments={departments || []} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(true); }} />}
+    </>
+  );
+}
