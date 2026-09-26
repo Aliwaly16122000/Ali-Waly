@@ -6,7 +6,7 @@ import db from '../db.js';
 import { parse, badRequest, notFound, toId } from '../lib/http.js';
 import { requireRole } from '../lib/auth.js';
 import { notify } from '../lib/notify.js';
-import { currentTerm, listTerms, setCurrentTerm } from '../lib/term.js';
+import { listTerms, setCurrentTerm, setTermDates, termInfo } from '../lib/term.js';
 import { backupPath, listBackups, runBackup } from '../lib/backup.js';
 import ExcelJS from 'exceljs';
 import fs from 'node:fs/promises';
@@ -46,14 +46,17 @@ router.get('/overview', (_req, res) => {
 });
 
 // ───────────── Academic term ─────────────
-router.get('/term', (_req, res) => res.json({ current: currentTerm(), terms: listTerms() }));
+router.get('/term', (_req, res) => res.json({ current: termInfo(), terms: listTerms() }));
 
 router.put('/term', (req, res) => {
   const t = parse(z.object({
     academic_year: z.string().trim().regex(/^\d{4}\/\d{4}$/, 'السنة الدراسية بصيغة 2026/2027'),
     semester: z.enum(['fall', 'spring', 'summer']),
-  }), req.body);
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  }).refine((v) => !v.start_date || !v.end_date || v.end_date > v.start_date, 'تاريخ نهاية الترم لازم يكون بعد بدايته'), req.body);
   setCurrentTerm(t);
+  if (t.start_date && t.end_date) setTermDates(t, t.start_date, t.end_date);
   res.json({ ok: true });
 });
 

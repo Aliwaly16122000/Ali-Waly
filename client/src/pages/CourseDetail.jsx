@@ -61,6 +61,12 @@ export default function CourseDetail() {
           <h1 className="text-2xl sm:text-3xl font-extrabold mt-3">{course.name}</h1>
           <p className="text-white/80 mt-1">{course.department_name} · {LEVEL_LABELS[course.level] ?? ''} · {course.students_count} طالب</p>
           {course.description && <p className="text-white/85 mt-3 max-w-3xl text-sm leading-relaxed">{course.description}</p>}
+          {role === 'student' && course.my_section && (
+            <p className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm">
+              <span className="font-bold">{course.my_section}</span>
+              {course.section_staff.length > 0 && <span>· معيد السكشن: {course.section_staff.map((s) => titled(s)).join('، ')}</span>}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2 mt-5">
             {course.staff.map((s) => (
               <button key={s.id} onClick={() => role !== 'admin' && message(s.id)} disabled={role === 'admin'}

@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, QrCode, MessagesSquare, Bell, Building2, Users, Library, LogOut,
-  Moon, Sun, Menu, X, GraduationCap, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup,
+  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList,
 } from 'lucide-react';
+import { Logo, BrandTitle } from '../context/BrandingContext';
+import HeaderClock from './HeaderClock';
 import { useAuth } from '../context/AuthContext';
 import { useRealtime } from '../context/RealtimeContext';
 import { api } from '../lib/api';
@@ -18,14 +20,18 @@ function navFor(role) {
       { to: '/admin/departments', label: 'الأقسام', icon: Building2 },
       { to: '/admin/users', label: 'المستخدمون', icon: Users },
       { to: '/admin/courses', label: 'المواد والتسجيل', icon: Library },
+      { to: '/admin/exams', label: 'جدول الامتحانات', icon: ClipboardList },
+      { to: '/calendar', label: 'التقويم الأكاديمي', icon: CalendarRange },
       { to: '/admin/broadcast', label: 'إعلانات الكلية', icon: Megaphone },
-      { to: '/admin/system', label: 'الترم والنسخ الاحتياطي', icon: DatabaseBackup },
+      { to: '/admin/system', label: 'إعدادات الكلية', icon: DatabaseBackup },
       { to: '/courses', label: 'استعراض المواد', icon: BookOpen },
     ];
   }
   return [...common,
     { to: '/courses', label: 'موادي', icon: BookOpen },
     { to: '/schedule', label: 'جدولي', icon: CalendarDays },
+    { to: '/calendar', label: 'التقويم', icon: CalendarRange },
+    { to: '/exams', label: role === 'student' ? 'امتحاناتي' : 'الامتحانات', icon: ClipboardList },
     ...(role === 'student' ? [{ to: '/scan', label: 'تسجيل الحضور', icon: QrCode }] : []),
     { to: '/chat', label: 'المحادثات', icon: MessagesSquare, badge: 'messages' },
     { to: '/notifications', label: 'الإشعارات', icon: Bell, badge: 'notifications' },
@@ -115,11 +121,8 @@ function Sidebar({ items, badges, onNavigate, user, onLogout }) {
   return (
     <div className="flex flex-col h-full">
       <Link to="/" onClick={onNavigate} className="flex items-center gap-3 px-5 h-16 shrink-0">
-        <img src="/icon.svg" alt="" className="size-9" />
-        <div className="leading-tight">
-          <p className="font-extrabold text-ink">بوابة الهندسة</p>
-          <p className="text-[11px] text-muted">Faculty of Engineering</p>
-        </div>
+        <Logo className="size-10 shrink-0" />
+        <BrandTitle />
       </Link>
       <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
         {items.map((item) => (
@@ -170,7 +173,7 @@ export default function Layout() {
 
   useEffect(() => setDrawer(false), [location.pathname]);
 
-  const bottomItems = items.filter((i) => i.to !== '/notifications').slice(0, 5);
+  const bottomItems = items.filter((i) => !['/notifications', '/calendar', '/schedule'].includes(i.to)).slice(0, 5);
 
   return (
     <div className="min-h-screen lg:pr-72">
@@ -191,9 +194,10 @@ export default function Layout() {
       <header className="sticky top-0 z-20 h-16 bg-canvas/80 backdrop-blur border-b border-line">
         <div className="h-full max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-2">
           <IconButton icon={Menu} label="القائمة" className="lg:hidden" onClick={() => setDrawer(true)} />
-          <Link to="/" className="lg:hidden flex items-center gap-2 font-extrabold">
-            <GraduationCap className="size-6 text-brand-600" /> بوابة الهندسة
+          <Link to="/" className="lg:hidden flex items-center gap-2 min-w-0">
+            <Logo className="size-8 shrink-0" /> <BrandTitle sub={false} />
           </Link>
+          <HeaderClock />
           <div className="flex-1" />
           {!connected && <span className="hidden sm:inline text-xs text-amber-600 font-semibold">جارٍ الاتصال…</span>}
           <IconButton icon={dark ? Sun : Moon} label="تبديل المظهر" onClick={toggleTheme} />

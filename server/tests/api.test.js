@@ -250,3 +250,78 @@ test('admin: Excel template round-trip imports students, doctors and TAs with se
   const enrolled = (await admin.get(`/admin/courses/${course.id}/enrollments`)).data;
   assert.equal(enrolled.find((e) => e.username === '2098001').section, 'سكشن 2');
 });
+
+test('calendar: term week, holidays cancel classes and stop timetable reminders', async () => {
+  const term = (await student.get('/calendar/term')).data;
+  assert.equal(term.status, 'running');
+  assert.ok(term.week >= 1 && term.week <= term.weeks);
+
+  const d = new Date(); d.setUTCDate(d.getUTCDate() + 1);
+  const day = d.toISOString().slice(0, 10);
+  const r = await admin.post('/calendar/events', { title: 'إجازة اختبار', kind: 'holiday', start_date: day, end_date: day, notify: true });
+  assert.equal(r.status, 201);
+  assert.equal((await student.post('/calendar/events', { title: 'x', kind: 'event', start_date: day, end_date: day })).status, 403);
+
+  const cal = (await student.get(`/calendar?from=${day}&to=${day}`)).data.items;
+  assert.ok(cal.some((i) => i.type === 'holiday'));
+  for (const c of cal.filter((i) => ['lecture', 'section', 'lab'].includes(i.type))) assert.equal(c.cancelled, 'إجازة اختبار');
+  const notes = (await student.get('/notifications?limit=3')).data.items.map((n) => n.title);
+  assert.ok(notes.some((t) => t.includes('إجازة اختبار')));
+});
+
+test('exams: Excel timetable + seating, visible to enrolled students only after publishing', async () => {
+  const { default: ExcelJS } = await import('exceljs');
+  const tpl = await admin.get('/exams/template.xlsx');
+  assert.equal(tpl.status, 200);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(tpl.data);
+  const put = (sheet, row, values) => values.forEach((v, i) => { wb.getWorksheet(sheet).getCell(row, i + 1).value = v; });
+  put('جدول الامتحانات', 2, ['CSE321', '', 'فاينال', '2026-11-20', '9:00', '12:00', 'مدرج 5']);
+  put('جدول الامتحانات', 3, ['XXX999', '', 'فاينال', '2026-11-21', '9:00', '12:00']);
+  put('جدول الامتحانات', 4, ['CSE331', '', 'فاينال', '21/11/2026', '1:00 م', '3:00 م']);
+  put('أرقام الجلوس', 2, ['2023001', '', '5001', 'لجنة 7']);
+  const fd = new FormData();
+  fd.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'exams.xlsx');
+  fd.append('period', 'final');
+  const r = await admin.post('/exams/import', fd);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.exams, 2);
+  assert.equal(r.data.seats, 1);
+  assert.equal(r.data.errors.length, 1);
+
+  const finals = (await admin.get('/exams/me')).data.exams.filter((x) => x.kind === 'final');
+  const os = finals.find((x) => x.course_code === 'CSE331');
+  assert.equal(os.start_time, '13:00');
+  assert.equal(os.exam_date, '2026-11-21');
+
+  assert.ok(!(await student.get('/exams/me')).data.exams.some((x) => x.kind === 'final'), 'drafts are hidden from students');
+  const pub = await admin.post('/exams/publish', { ids: finals.map((x) => x.id) });
+  assert.equal(pub.status, 200);
+  const mine = (await student.get('/exams/me')).data.exams.filter((x) => x.kind === 'final');
+  const ds = mine.find((x) => x.course_code === 'CSE321');
+  assert.equal(ds.seat_number, '5001');
+  assert.equal(ds.hall, 'لجنة 7');
+  assert.ok(!(await otherStudent.get('/exams/me')).data.exams.some((x) => x.course_code === 'CSE321'));
+
+  // doctors manage only their own courses' exams
+  assert.equal((await doctor.post('/exams', { course_id: 1, kind: 'oral', exam_date: '2026-11-25', start_time: '10:00', end_time: '11:00' })).status, 201);
+  assert.equal((await doctor.post('/exams', { course_id: 4, kind: 'oral', exam_date: '2026-11-25', start_time: '10:00', end_time: '11:00' })).status, 403);
+  assert.equal((await student.post('/exams/publish', { ids: [ds.id] })).status, 403);
+});
+
+test('branding: public name, admin-only changes and logo upload', async () => {
+  const anon = await client(srv.base);
+  assert.equal((await anon.get('/branding')).data.university, 'جامعة بورسعيد');
+  assert.equal((await doctor.put('/branding', { university: 'x', faculty: 'y' })).status, 403);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const fd = new FormData();
+  fd.append('logo', new Blob([png], { type: 'image/png' }), 'logo.png');
+  const up = await admin.post('/branding/logo', fd);
+  assert.equal(up.status, 200);
+  assert.ok(up.data.logo_url);
+  const img = await anon.get(up.data.logo_url.replace('/api', ''));
+  assert.equal(img.status, 200);
+  const bad = new FormData();
+  bad.append('logo', new Blob(['hi']), 'x.txt');
+  assert.equal((await admin.post('/branding/logo', bad)).status, 400);
+});

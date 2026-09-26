@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Alert, Button, Card, Field, Input } from '../components/ui';
+import { Logo } from '../context/BrandingContext';
 
 export function ChangePasswordForm({ onDone, requireCurrent = true }) {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' });
@@ -46,7 +47,7 @@ export default function ForceChangePassword() {
   return (
     <div className="min-h-screen grid place-items-center p-4">
       <Card className="w-full max-w-md p-8">
-        <div className="size-14 rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/10 grid place-items-center mb-5"><ShieldCheck className="size-7" /></div>
+        <div className="flex items-center gap-3 mb-5"><Logo className="size-14" /><div className="size-14 rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/10 grid place-items-center"><ShieldCheck className="size-7" /></div></div>
         <h1 className="text-2xl font-extrabold">أهلاً {user.name}</h1>
         <p className="text-muted mt-2 mb-6">لحماية حسابك، لازم تغيّر كلمة السر المؤقتة اللي استلمتها قبل ما تكمل.</p>
         <ChangePasswordForm onDone={refresh} />

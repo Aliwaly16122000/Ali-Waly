@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
 import { ACCEPTING_SQL } from './assessments.js';
-import { currentTerm, isArchived, listTerms, termFilter } from '../lib/term.js';
+import { isArchived, listTerms, termFilter, termInfo } from '../lib/term.js';
 import { ah, parse, notFound, forbidden, toId } from '../lib/http.js';
 import { courseAccess, courseStudentIds, courseStaffIds } from '../lib/access.js';
 import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
@@ -58,14 +58,24 @@ router.get('/', (req, res) => {
 
 /** Current term + the terms this user has courses in (for the archive switcher). */
 router.get('/terms', (req, res) => {
-  res.json({ current: currentTerm(), terms: listTerms() });
+  res.json({ current: termInfo(), terms: listTerms() });
 });
 
 router.get('/:id', (req, res) => {
   const id = toId(req.params.id);
   const { role } = courseAccess(req.user, id);
   const course = db.prepare(`SELECT ${COURSE_COLUMNS} FROM courses c LEFT JOIN departments d ON d.id = c.department_id WHERE c.id = ?`).get(id);
-  res.json({ ...hydrate(course), my_role: role, archived: isArchived(course) });
+  let mySection = null;
+  let sectionStaff = [];
+  if (role === 'student') {
+    // "Your section's TA": whoever runs the timetable slots of the student's own section.
+    mySection = db.prepare('SELECT section FROM enrollments WHERE course_id = ? AND student_id = ?').pluck().get(id, req.user.id);
+    if (mySection) {
+      sectionStaff = db.prepare(`SELECT DISTINCT u.id, u.name, u.role, s.kind FROM course_schedule s JOIN users u ON u.id = s.staff_id
+        WHERE s.course_id = ? AND s.section = ?`).all(id, mySection);
+    }
+  }
+  res.json({ ...hydrate(course), my_role: role, archived: isArchived(course), my_section: mySection, section_staff: sectionStaff });
 });
 
 router.get('/:id/students', (req, res) => {

@@ -197,6 +197,34 @@ for (const [key, day, start, end, room, ta] of timetable) {
   });
 }
 
+// ───────────── Academic calendar ─────────────
+{
+  const ymd = (d) => d.toISOString().slice(0, 10);
+  const start = new Date(); start.setUTCDate(start.getUTCDate() - 7 * 6 - start.getUTCDay() + 6); // a Saturday ~6 weeks ago
+  const end = new Date(start); end.setUTCDate(end.getUTCDate() + 7 * 15 - 1);
+  db.prepare('INSERT INTO term_dates (academic_year, semester, start_date, end_date) VALUES (?, ?, ?, ?)').run(YEAR, 'fall', ymd(start), ymd(end));
+  const plus = (days) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + days); return ymd(d); };
+  const insEvent = db.prepare('INSERT INTO academic_events (title, kind, start_date, end_date, department_id, level, notes) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  insEvent.run('إجازة رسمية', 'holiday', plus(9), plus(9), null, null, 'لا توجد محاضرات أو سكاشن');
+  insEvent.run('أسبوع امتحانات الميدترم', 'exam', plus(14), plus(19), null, null, null);
+  insEvent.run('يوم التوظيف لطلاب الحاسبات', 'event', plus(4), plus(4), dept.CSE, 3, 'قاعة المؤتمرات الساعة 11');
+  insEvent.run('امتحانات نهاية الترم', 'exam', ymd(new Date(end.getTime() - 14 * 86400000)), ymd(end), null, null, null);
+}
+
+// ───────────── Branding & midterm exam timetable ─────────────
+db.prepare("INSERT INTO settings (key, value) VALUES ('brand_university', 'جامعة بورسعيد'), ('brand_faculty', 'كلية الهندسة')").run();
+{
+  const plusDay = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const insExam = db.prepare(`INSERT INTO exams (course_id, kind, exam_date, start_time, end_time, location, published) VALUES (?, 'midterm', ?, ?, ?, ?, 1)`);
+  const rooms = ['المدرج الكبير', 'مدرج 1', 'مدرج 2'];
+  Object.values(c).forEach((cid, i) => insExam.run(cid, plusDay(14 + (i % 5)), i % 2 ? '12:00' : '09:00', i % 2 ? '13:30' : '10:30', rooms[i % 3]));
+  const insSeat = db.prepare(`INSERT INTO exam_seating (academic_year, semester, period, student_id, seat_number, hall) VALUES (?, 'fall', 'midterm', ?, ?, ?)`);
+  let seatNo = 1001;
+  for (const code of ['CSE', 'ECE', 'CIV', 'PREP']) {
+    students[code].forEach((sid, i) => insSeat.run(YEAR, sid, String(seatNo++), `لجنة ${Math.floor(i / 10) + 1} - ${code === 'PREP' ? 'المدرج الكبير' : 'مبنى ' + code}`));
+  }
+}
+
 // ───────────── Posts ─────────────
 const insPost = db.prepare('INSERT INTO posts (course_id, author_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)');
 insPost.run(c.ds, doctors.ahmed, 'announcement', 'موعد الميدترم', 'الميدترم يوم الأحد القادم الساعة 10 صباحاً في المدرج الكبير. المنهج حتى نهاية الأشجار (Trees).', iso(daysFromNow(-10)));

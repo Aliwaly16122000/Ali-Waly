@@ -230,6 +230,59 @@ CREATE TABLE IF NOT EXISTS student_devices (
   bound_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- Start/end dates of each term (local dates, YYYY-MM-DD).
+CREATE TABLE IF NOT EXISTS term_dates (
+  academic_year TEXT NOT NULL,
+  semester      TEXT NOT NULL CHECK (semester IN ('fall','spring','summer')),
+  start_date    TEXT NOT NULL,
+  end_date      TEXT NOT NULL,
+  PRIMARY KEY (academic_year, semester)
+);
+
+-- Academic calendar: holidays (no classes), exam periods and other events.
+CREATE TABLE IF NOT EXISTS academic_events (
+  id            INTEGER PRIMARY KEY,
+  title         TEXT NOT NULL,
+  kind          TEXT NOT NULL DEFAULT 'event' CHECK (kind IN ('holiday','exam','event')),
+  start_date    TEXT NOT NULL,
+  end_date      TEXT NOT NULL,
+  department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
+  level         INTEGER,
+  notes         TEXT,
+  created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_events_dates ON academic_events(start_date, end_date);
+
+-- Exam timetable: one row per course exam, shown to every student enrolled in the course.
+CREATE TABLE IF NOT EXISTS exams (
+  id          INTEGER PRIMARY KEY,
+  course_id   INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL DEFAULT 'final' CHECK (kind IN ('midterm','final','practical','oral')),
+  exam_date   TEXT NOT NULL,
+  start_time  TEXT NOT NULL,
+  end_time    TEXT NOT NULL,
+  location    TEXT,
+  notes       TEXT,
+  published   INTEGER NOT NULL DEFAULT 0,
+  reminded_at TEXT,
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (course_id, kind, exam_date, start_time)
+);
+CREATE INDEX IF NOT EXISTS idx_exams_date ON exams(exam_date);
+
+-- Seat number and hall (لجنة) of each student for a term's midterm or final period.
+CREATE TABLE IF NOT EXISTS exam_seating (
+  academic_year TEXT NOT NULL,
+  semester      TEXT NOT NULL,
+  period        TEXT NOT NULL CHECK (period IN ('midterm','final')),
+  student_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seat_number   TEXT NOT NULL,
+  hall          TEXT,
+  PRIMARY KEY (academic_year, semester, period, student_id)
+);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

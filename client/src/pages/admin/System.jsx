@@ -1,21 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarRange, Copy, Database, Download, HardDriveDownload, Save } from 'lucide-react';
+import { CalendarRange, Copy, Database, Download, HardDriveDownload, Save, Image as ImageIcon } from 'lucide-react';
+import { Logo, useBranding } from '../../context/BrandingContext';
 import { toast } from 'sonner';
-import { api } from '../../lib/api';
+import { api, toForm } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
 import { SEMESTER_LABELS, fileSize, fmtDateTime } from '../../lib/format';
-import { Alert, Badge, Button, Card, CardHeader, EmptyState, Field, Input, PageHeader, Select, Table, Td, Th, cx } from '../../components/ui';
+import { Alert, Badge, Button, Card, CardHeader, EmptyState, Field, FileDrop, Input, PageHeader, Select, Table, Td, Th, cx } from '../../components/ui';
 
 function TermCard() {
   const { data, reload } = useApi('/admin/term');
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (data?.current && !form) setForm(data.current); }, [data, form]);
+  useEffect(() => {
+    if (data?.current && !form) {
+      const { academic_year, semester, start_date, end_date } = data.current;
+      setForm({ academic_year, semester, start_date: start_date || '', end_date: end_date || '' });
+    }
+  }, [data, form]);
   if (!data || !form) return null;
   const save = async () => {
     setSaving(true);
     try {
-      await api.put('/admin/term', form);
+      await api.put('/admin/term', { ...form, start_date: form.start_date || null, end_date: form.end_date || null });
       toast.success('تم تغيير الترم الحالي');
       reload(true);
     } catch (err) {
@@ -30,7 +36,12 @@ function TermCard() {
       <div className="px-5 pb-5 grid sm:grid-cols-3 gap-4 items-end">
         <Field label="العام الدراسي">{(id) => <Input id={id} dir="ltr" value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} placeholder="2026/2027" />}</Field>
         <Field label="الترم">{(id) => <Select id={id} value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })}>{Object.entries(SEMESTER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
+        <div />
+        <Field label="بداية الترم" hint="أول يوم دراسة">{(id) => <Input id={id} type="date" dir="ltr" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />}</Field>
+        <Field label="نهاية الترم" hint="آخر يوم امتحانات">{(id) => <Input id={id} type="date" dir="ltr" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />}</Field>
         <Button icon={Save} loading={saving} onClick={save}>حفظ</Button>
+        {data.current?.status === 'running' && <p className="sm:col-span-3 text-sm font-semibold text-brand-600">النهارده الأسبوع {data.current.week} من {data.current.weeks}</p>}
+        <p className="sm:col-span-3 text-xs text-muted">خارج تواريخ الترم وفي الإجازات (من صفحة التقويم) مفيش تذكيرات محاضرات ولا حضور تلقائي.</p>
         <div className="sm:col-span-3 flex flex-wrap gap-2">
           {data.terms.map((t) => (
             <Badge key={`${t.academic_year}-${t.semester}`} tone={t.academic_year === data.current?.academic_year && t.semester === data.current?.semester ? 'green' : 'slate'}>
@@ -99,6 +110,52 @@ function CloneCard() {
   );
 }
 
+function BrandingCard() {
+  const brand = useBranding();
+  const [form, setForm] = useState({ university: brand.university, faculty: brand.faculty });
+  const [logo, setLogo] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setForm({ university: brand.university, faculty: brand.faculty }); }, [brand.university, brand.faculty]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      let next = await api.put('/branding', form);
+      if (logo) next = await api.post('/branding/logo', toForm({ logo }));
+      brand.setBrand(next);
+      setLogo(null);
+      toast.success('تم حفظ هوية الكلية');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const removeLogo = async () => {
+    brand.setBrand(await api.del('/branding/logo'));
+  };
+  return (
+    <Card>
+      <CardHeader icon={ImageIcon} title="هوية الكلية" subtitle="الاسم واللوجو بيظهروا في صفحة الدخول والقائمة وشاشة الحضور" />
+      <div className="px-5 pb-5 space-y-4">
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="اسم الجامعة">{(id) => <Input id={id} value={form.university} onChange={(e) => setForm({ ...form, university: e.target.value })} placeholder="جامعة بورسعيد" />}</Field>
+          <Field label="اسم الكلية">{(id) => <Input id={id} value={form.faculty} onChange={(e) => setForm({ ...form, faculty: e.target.value })} placeholder="كلية الهندسة" />}</Field>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="size-20 rounded-2xl border border-line bg-white grid place-items-center overflow-hidden shrink-0">
+            {logo ? <img src={URL.createObjectURL(logo)} alt="" className="size-full object-contain p-1" /> : <Logo className="size-16" />}
+          </div>
+          <div className="flex-1"><FileDrop file={logo} onChange={setLogo} accept=".png,.jpg,.jpeg,.webp" label="ارفع لوجو الجامعة" hint="PNG بخلفية شفافة أفضل · حتى 2 ميجا" /></div>
+        </div>
+        <div className="flex gap-2">
+          <Button icon={Save} loading={saving} onClick={save}>حفظ</Button>
+          {brand.logo_url && <Button variant="ghost" onClick={removeLogo}>إزالة اللوجو</Button>}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function BackupsCard() {
   const { data, reload } = useApi('/admin/backups');
   const [busy, setBusy] = useState(false);
@@ -140,9 +197,9 @@ function BackupsCard() {
 export default function System() {
   return (
     <>
-      <PageHeader title="الترم والنسخ الاحتياطي" />
+      <PageHeader title="إعدادات الكلية" subtitle="الهوية، الترم الحالي وتواريخه، النسخ الاحتياطي، وتجهيز ترم جديد" />
       <div className="grid lg:grid-cols-2 gap-6">
-        <div className="space-y-6"><TermCard /><BackupsCard /></div>
+        <div className="space-y-6"><BrandingCard /><TermCard /><BackupsCard /></div>
         <CloneCard />
       </div>
     </>

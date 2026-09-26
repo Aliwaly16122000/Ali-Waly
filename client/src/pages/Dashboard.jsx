@@ -1,13 +1,79 @@
 import { Link } from 'react-router-dom';
 import {
   BookOpen, FileText, Award, CalendarCheck, QrCode, Megaphone, ChevronLeft, ClipboardCheck, Users,
-  Building2, Library, GraduationCap, UserCheck, AlertTriangle, Radio, Inbox, Clock, CalendarDays,
+  Building2, Library, GraduationCap, UserCheck, AlertTriangle, Radio, Inbox, Clock, CalendarDays, ClipboardList,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { EXAM_KINDS, daysUntil, examDay, untilLabel } from './exams/shared';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../lib/useApi';
-import { TYPE_LABELS, dueInfo, num, pctTone, timeAgo, titled } from '../lib/format';
+import { DAY_LABELS, KIND_LABELS, TYPE_LABELS, clock12, dueInfo, num, pctTone, timeAgo, titled } from '../lib/format';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageLoader, Progress, StatCard, cx } from '../components/ui';
 import { SlotRow } from './MySchedule';
+
+const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+/** The next lecture/section from the weekly timetable, with a live countdown. */
+function NextClass() {
+  const { data } = useApi('/schedule/me');
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
+  if (!data?.slots.length) return null;
+  const nowD = new Date();
+  const nowMin = nowD.getHours() * 60 + nowD.getMinutes();
+  let next = null;
+  for (let add = 0; add < 7 && !next; add++) {
+    const dow = (nowD.getDay() + add) % 7;
+    const candidates = data.slots.filter((s) => s.day_of_week === dow && (add > 0 || toMin(s.end_time) > nowMin))
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    if (candidates.length) next = { slot: candidates[0], add };
+  }
+  if (!next) return null;
+  const { slot, add } = next;
+  const live = add === 0 && toMin(slot.start_time) <= nowMin;
+  const mins = add * 1440 + toMin(slot.start_time) - nowMin;
+  const when = live ? 'دلوقتي' : mins < 60 ? `بعد ${mins} دقيقة` : add === 0 ? `النهارده ${clock12(slot.start_time)}` : add === 1 ? `بكرة ${clock12(slot.start_time)}` : `${DAY_LABELS[slot.day_of_week]} ${clock12(slot.start_time)}`;
+  return (
+    <Link to={`/courses/${slot.course_id}`} className="block mb-6">
+      <div className={cx('relative overflow-hidden rounded-3xl p-5 sm:p-6 text-white shadow-lg', live ? 'bg-gradient-to-l from-emerald-600 to-teal-600' : 'bg-gradient-to-l from-brand-600 to-indigo-700')}>
+        <div className="absolute -left-8 -top-8 size-40 rounded-full bg-white/10" />
+        <div className="relative flex flex-wrap items-center gap-4">
+          <div className="size-14 rounded-2xl bg-white/15 grid place-items-center"><Clock className="size-7" /></div>
+          <div className="flex-1 min-w-48">
+            <p className="text-white/80 text-sm">{live ? 'شغال دلوقتي' : { lecture: 'محاضرتك الجاية', section: 'سكشنك الجاي', lab: 'معملك الجاي' }[slot.kind]}</p>
+            <p className="text-xl sm:text-2xl font-extrabold">{KIND_LABELS[slot.kind]} {slot.course_name}</p>
+            <p className="text-white/85 text-sm mt-0.5">{[slot.section, slot.location, slot.staff_name && titled({ name: slot.staff_name, role: slot.staff_role })].filter(Boolean).join(' · ')}</p>
+          </div>
+          <div className="text-left">
+            <p className="text-2xl sm:text-3xl font-extrabold">{when}</p>
+            <p className="text-white/80 text-sm">{clock12(slot.start_time)} – {clock12(slot.end_time)}</p>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function UpcomingExams() {
+  const { data } = useApi('/exams/me');
+  const upcoming = (data?.exams || []).filter((x) => daysUntil(x.exam_date) >= 0).slice(0, 4);
+  if (!upcoming.length) return null;
+  return (
+    <Card className="mb-6">
+      <CardHeader icon={ClipboardList} title="امتحاناتك الجاية" action={<Button variant="ghost" size="sm" to="/exams">الجدول كامل</Button>} />
+      <div className="px-3 pb-3 grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        {upcoming.map((x) => (
+          <Link key={x.id} to="/exams" className="rounded-xl border border-line p-3 hover:border-brand-300">
+            <div className="flex items-center justify-between"><Badge tone={daysUntil(x.exam_date) <= 1 ? 'red' : 'amber'}>{untilLabel(x.exam_date)}</Badge><span className="text-xs text-muted">{EXAM_KINDS[x.kind]}</span></div>
+            <p className="font-bold mt-2 truncate">{x.course_name}</p>
+            <p className="text-xs text-muted">{examDay(x.exam_date)} · {clock12(x.start_time)}</p>
+            <p className="text-xs text-muted">{x.hall || x.location}{x.seat_number && ` · جلوس ${x.seat_number}`}</p>
+          </Link>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function TodaySchedule() {
   const { data } = useApi('/schedule/me');
@@ -65,6 +131,8 @@ function StudentDashboard({ data, user }) {
     <>
       <Greeting user={user} subtitle={`${user.department_name ?? ''} · ${data.courses} مواد مسجلة هذا الترم`} />
       <LiveSessionBanner sessions={data.active_sessions} student />
+      <NextClass />
+      <UpcomingExams />
       <TodaySchedule />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard icon={BookOpen} label="موادي" value={data.courses} to="/courses" />
@@ -153,6 +221,7 @@ function StaffDashboard({ data, user }) {
     <>
       <Greeting user={user} subtitle={isDoctor ? 'متابعة المواد والدرجات بانتظار اعتمادك' : 'التسليمات اللي محتاجة تصحيح'} />
       <LiveSessionBanner sessions={data.active_sessions} />
+      <NextClass />
       <TodaySchedule />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard icon={BookOpen} label="موادي" value={data.courses} to="/courses" />

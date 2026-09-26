@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BrandingProvider } from './context/BrandingContext';
 import { RealtimeProvider } from './context/RealtimeContext';
 import Layout from './components/Layout';
 import { PageLoader } from './components/ui';
@@ -25,6 +26,9 @@ const AdminBroadcast = lazy(() => import('./pages/admin/Broadcast'));
 const AdminSystem = lazy(() => import('./pages/admin/System'));
 const MySchedule = lazy(() => import('./pages/MySchedule'));
 const StartSlotAttendance = lazy(() => import('./pages/StartSlotAttendance'));
+const CalendarPage = lazy(() => import('./pages/Calendar'));
+const Exams = lazy(() => import('./pages/Exams'));
+const AdminExams = lazy(() => import('./pages/admin/Exams'));
 
 function Protected({ roles, children }) {
   const { user } = useAuth();
@@ -63,6 +67,9 @@ function AppRoutes() {
             <Route path="chat" element={<Protected roles={['student', 'ta', 'doctor']}><Chat /></Protected>} />
             <Route path="chat/:id" element={<Protected roles={['student', 'ta', 'doctor']}><Chat /></Protected>} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="calendar" element={<CalendarPage />} />
+            <Route path="exams" element={<Protected roles={['student', 'ta', 'doctor']}><Exams /></Protected>} />
+            <Route path="admin/exams" element={<Protected roles={['admin']}><AdminExams /></Protected>} />
             <Route path="schedule" element={<Protected roles={['student', 'ta', 'doctor']}><MySchedule /></Protected>} />
             <Route path="schedule/:id/attend" element={<Protected roles={['ta', 'doctor', 'admin']}><StartSlotAttendance /></Protected>} />
             <Route path="admin/system" element={<Protected roles={['admin']}><AdminSystem /></Protected>} />
@@ -82,9 +89,11 @@ function AppRoutes() {
 
 export default function App() {
   return (
+    <BrandingProvider>
     <AuthProvider>
       <AppRoutes />
       <Toaster position="top-center" dir="rtl" richColors closeButton toastOptions={{ style: { fontFamily: 'inherit' } }} />
     </AuthProvider>
+    </BrandingProvider>
   );
 }

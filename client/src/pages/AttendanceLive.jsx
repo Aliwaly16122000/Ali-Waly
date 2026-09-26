@@ -8,6 +8,7 @@ import { useApi } from '../lib/useApi';
 import { useSocketEvent } from '../context/RealtimeContext';
 import { Avatar, Button, ConfirmModal, ErrorState, PageLoader, cx } from '../components/ui';
 import { fmtTime } from '../lib/format';
+import { useBranding } from '../context/BrandingContext';
 
 function useCountdown(target) {
   const [now, setNow] = useState(Date.now());
@@ -21,6 +22,7 @@ function useCountdown(target) {
 /** Projector screen: rotating QR + live list of students as they check in. */
 export default function AttendanceLive() {
   const { id } = useParams();
+  const brand = useBranding();
   const { data: session, error, loading, reload } = useApi(`/attendance/${id}`);
   const [token, setToken] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -103,6 +105,8 @@ export default function AttendanceLive() {
 
         <div className="grid lg:grid-cols-[1fr_22rem] gap-8 items-start">
           <div className="text-center">
+            {brand.logo_url && <img src={brand.logo_url} alt="" className="size-16 object-contain mx-auto mb-3 bg-white rounded-2xl p-1.5" />}
+            <p className="text-white/60 text-sm">{[brand.faculty, brand.university].filter(Boolean).join(' · ')}</p>
             <p className="text-white/60 ltr">{session.course_code}</p>
             <h1 className="text-3xl sm:text-4xl font-extrabold mt-1">{session.course_name}</h1>
             <p className="text-xl text-white/80 mt-1">{session.title}</p>

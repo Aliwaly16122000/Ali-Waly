@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, LogIn, QrCode, BarChart3, MessagesSquare, FileCheck2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button, Field, Input, Alert } from '../components/ui';
+import { Logo, useBranding } from '../context/BrandingContext';
 
 const FEATURES = [
   { icon: FileCheck2, title: 'الشيتات والتسليم', text: 'ارفع حلك واعرف درجتك أول ما تتعتمد' },
@@ -13,6 +14,7 @@ const FEATURES = [
 
 export default function Login() {
   const { login } = useAuth();
+  const brand = useBranding();
   const navigate = useNavigate();
   const location = useLocation();
   const [form, setForm] = useState({ username: '', password: '' });
@@ -38,11 +40,11 @@ export default function Login() {
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="flex items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-sm">
-          <div className="flex items-center gap-3 mb-10">
-            <img src="/icon.svg" alt="" className="size-12" />
+          <div className="flex items-center gap-4 mb-10">
+            <Logo className="size-16 shrink-0" />
             <div>
-              <p className="text-xl font-extrabold">بوابة كلية الهندسة</p>
-              <p className="text-sm text-muted">Faculty of Engineering Portal</p>
+              <p className="text-xl font-extrabold">{brand.faculty || 'بوابة كلية الهندسة'}</p>
+              <p className="text-sm text-muted">{brand.university || 'Faculty of Engineering Portal'}</p>
             </div>
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight">أهلاً بيك 👋</h1>
@@ -81,7 +83,8 @@ export default function Login() {
           <rect width="100%" height="100%" fill="url(#grid)" />
         </svg>
         <div className="relative max-w-lg">
-          <p className="text-brand-200 font-semibold mb-3">كل حاجة في مكان واحد</p>
+          {brand.logo_url && <img src={brand.logo_url} alt="" className="size-24 object-contain mb-6 drop-shadow-xl bg-white/95 rounded-3xl p-2" />}
+          <p className="text-brand-200 font-semibold mb-3">{[brand.faculty, brand.university].filter(Boolean).join(' · ') || 'كل حاجة في مكان واحد'}</p>
           <h2 className="text-4xl font-extrabold leading-tight">موادك، شيتاتك، درجاتك وحضورك<br />على منصة واحدة.</h2>
           <div className="grid grid-cols-2 gap-4 mt-10">
             {FEATURES.map((f) => (

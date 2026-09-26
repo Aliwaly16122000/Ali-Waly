@@ -2,8 +2,9 @@ import db from '../db.js';
 import { notify } from './notify.js';
 import { nowIso } from './time.js';
 import { localNow, toMinutes } from './clock.js';
-import { termFilter } from './term.js';
+import { isTeachingDay, termFilter } from './term.js';
 import { dailyBackup } from './backup.js';
+import { examReminders } from '../routes/exams.js';
 import { openAttendanceSession } from '../routes/attendance.js';
 import { KIND_LABELS, slotTitle } from '../routes/schedule.js';
 
@@ -93,9 +94,11 @@ function timetable() {
   const now = localNow();
   const tf = termFilter();
   const slots = db.prepare(`
-    SELECT s.*, c.name AS course_name, u.name AS staff_name FROM course_schedule s JOIN courses c ON c.id = s.course_id
+    SELECT s.*, c.name AS course_name, c.department_id, c.level, c.academic_year, c.semester, u.name AS staff_name
+    FROM course_schedule s JOIN courses c ON c.id = s.course_id
     LEFT JOIN users u ON u.id = s.staff_id WHERE s.day_of_week = ? AND ${tf.sql}`).all(now.dow, ...tf.params);
   for (const slot of slots) {
+    if (!isTeachingDay(now.date, slot)) continue; // holiday, or outside the term's dates
     const start = toMinutes(slot.start_time);
     const end = toMinutes(slot.end_time);
     const label = `${KIND_LABELS[slot.kind]}${slot.section ? ` (${slot.section})` : ''}`;
@@ -134,6 +137,7 @@ export function startScheduler() {
   const tick = () => {
     try {
       timetable();
+      examReminders(localNow());
       deadlineReminders();
       absenceWarnings();
       dailyBackup().catch((err) => console.error('backup failed', err));
