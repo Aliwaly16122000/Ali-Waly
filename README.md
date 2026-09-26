@@ -79,6 +79,13 @@ npm run dev       # الخادم على :4000 والواجهة على http://loc
 
 بدون `seed` بيتعمل حساب أدمن تلقائياً (`admin` / `admin123` أو من `ADMIN_USERNAME` / `ADMIN_PASSWORD`) ويُطلب تغيير كلمة السر أول دخول.
 
+### تجربة مجانية أونلاين (بدون أي أوامر)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Aliwaly16122000/Ali-Waly)
+
+اضغط الزرار ← سجّل دخول بحساب GitHub ← اضغط **Deploy Blueprint**. بعد حوالي 5 دقايق هيطلعلك لينك `https://engportal-xxxx.onrender.com` يفتح على أي موبايل، وفيه البيانات التجريبية والحسابات اللي فوق.
+> الخطة المجانية بتنام بعد 15 دقيقة من غير استخدام (أول فتح بعدها بياخد حوالي دقيقة)، والبيانات التجريبية بترجع لأصلها مع كل إعادة تشغيل — مناسبة للتجربة، مش للاستخدام الفعلي.
+
 ### النشر (Production)
 
 ```bash

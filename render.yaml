@@ -1,0 +1,16 @@
+# One-click deploy on Render's free plan (https://render.com).
+# The free plan has no persistent disk, so the demo data is re-created on every restart —
+# fine for trying the app. For real use, attach a disk (paid) or use Docker on a VPS.
+services:
+  - type: web
+    name: engportal
+    runtime: node
+    plan: free
+    buildCommand: npm install --prefix server && npm install --include=dev --prefix client && npm run build --prefix client
+    startCommand: npm run demo --prefix server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: APP_TIMEZONE
+        value: Africa/Cairo
