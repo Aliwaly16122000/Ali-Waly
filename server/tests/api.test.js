@@ -417,3 +417,15 @@ test('surveys: required survey unlocks grades and exam timetable per course', as
   await admin.post(`/surveys/${id}/status`, { status: 'closed' });
   assert.equal((await student.get('/courses/2/my-grades')).data.locked, undefined, 'closing a survey removes the gate');
 });
+
+test('login cards: issue temporary passwords for a course, skipping people already using the system', async () => {
+  const r = await admin.post('/admin/users/issue-credentials', { course_id: 3 });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.skipped >= 1, 'already-active users are skipped by default');
+  assert.ok(!r.data.cards.some((c) => c.username === '2023001'));
+  const card = r.data.cards.find((c) => c.role === 'student');
+  assert.match(card.password, /^[a-z0-9]{8}$/);
+  const fresh = await client(srv.base, card.username, card.password);
+  assert.equal(fresh.user.must_change_password, true);
+  assert.equal((await doctor.post('/admin/users/issue-credentials', { course_id: 3 })).status, 403);
+});

@@ -115,6 +115,15 @@ npm run dev       # الخادم على :4000 والواجهة على http://loc
 
 > مجاني حتى حوالي 60 ساعة في الشهر ومن غير فيزا، بس بيشتغل وهو مفتوح بس ويقف لوحده بعد 30 دقيقة من غير استخدام — للتجربة والعرض، مش للاستخدام الفعلي مع الطلاب.
 
+### 🟢 التشغيل على سيرفر حقيقي بأمر واحد (Oracle Cloud مجاناً أو سيرفر الكلية)
+
+دليل خطوة بخطوة بالعربي: **[deploy/ORACLE_AR.md](deploy/ORACLE_AR.md)**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Aliwaly16122000/Ali-Waly/main/deploy/install.sh | sudo bash
+```
+بيثبّت Docker و HTTPS تلقائي (Caddy) ويفتح الجدار الناري ويشغّل البوابة. والتحديث بعد كده: `sudo bash /opt/engportal/src/deploy/update.sh`.
+
 ### النشر (Production)
 
 ```bash

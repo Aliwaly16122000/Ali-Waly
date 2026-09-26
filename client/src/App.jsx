@@ -30,6 +30,7 @@ const CalendarPage = lazy(() => import('./pages/Calendar'));
 const Exams = lazy(() => import('./pages/Exams'));
 const AdminExams = lazy(() => import('./pages/admin/Exams'));
 const Oversight = lazy(() => import('./pages/Oversight'));
+const PrintCards = lazy(() => import('./pages/PrintCards'));
 const AdminFaculties = lazy(() => import('./pages/admin/Faculties'));
 const AdminSurveys = lazy(() => import('./pages/admin/Surveys'));
 const SurveyList = lazy(() => import('./pages/surveys/Student').then((m) => ({ default: m.SurveyList })));
@@ -61,6 +62,7 @@ function AppRoutes() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<Navigate to={location.state?.from || '/'} replace />} />
+          <Route path="/print/cards" element={<Protected roles={['admin']}><PrintCards /></Protected>} />
           <Route path="/attendance/:id/live" element={<Protected roles={['doctor', 'ta', 'admin']}><AttendanceLive /></Protected>} />
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />

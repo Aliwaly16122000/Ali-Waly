@@ -17,7 +17,7 @@ export default function Login() {
   const brand = useBranding();
   const navigate = useNavigate();
   const location = useLocation();
-  const [form, setForm] = useState({ username: '', password: '' });
+  const [form, setForm] = useState(() => ({ username: new URLSearchParams(location.search).get('u') || '', password: '' }));
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);

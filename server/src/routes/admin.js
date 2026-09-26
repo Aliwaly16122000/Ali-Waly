@@ -550,6 +550,42 @@ router.delete('/users/:id/device', (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Issues fresh temporary passwords for many users at once (e.g. a course's students) so
+ * admin can print login cards. By default only people who have never signed in are
+ * included, so nobody who's already using the system gets locked out.
+ */
+router.post('/users/issue-credentials', (req, res) => {
+  const { user_ids, course_id, include_active } = parse(z.object({
+    user_ids: z.array(z.number().int().positive()).max(5000).optional(),
+    course_id: z.number().int().positive().optional(),
+    include_active: z.boolean().default(false),
+  }).refine((v) => v.user_ids?.length || v.course_id, 'اختر المستخدمين أو المادة'), req.body);
+  let ids = user_ids || [];
+  if (course_id) {
+    ids = [...ids, ...db.prepare('SELECT user_id FROM course_staff WHERE course_id = ?').pluck().all(course_id),
+      ...db.prepare('SELECT student_id FROM enrollments WHERE course_id = ?').pluck().all(course_id)];
+  }
+  const load = db.prepare(`SELECT u.id, u.name, u.username, u.role, u.level, u.section, u.last_login_at, d.name AS department_name
+    FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id = ? AND u.role != 'admin'`);
+  const setPw = db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?');
+  const cards = [];
+  let skipped = 0;
+  db.transaction(() => {
+    for (const id of [...new Set(ids)]) {
+      const u = load.get(id);
+      if (!u) continue;
+      if (u.last_login_at && !include_active) { skipped += 1; continue; }
+      const password = generatePassword();
+      setPw.run(bcrypt.hashSync(password, 8), id);
+      const { last_login_at, ...rest } = u;
+      cards.push({ ...rest, password });
+    }
+  })();
+  cards.sort((a, b) => (a.role === 'student') - (b.role === 'student') || a.username.localeCompare(b.username, 'en', { numeric: true }));
+  res.json({ cards, skipped });
+});
+
 router.delete('/users/:id', (req, res) => {
   const id = toId(req.params.id);
   if (id === req.user.id) throw badRequest('لا يمكنك حذف حسابك');

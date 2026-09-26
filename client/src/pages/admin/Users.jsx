@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Upload, Search, KeyRound, Pencil, Trash2, Download, Copy, UserX, Smartphone, FileSpreadsheet } from 'lucide-react';
+import { Plus, Upload, Search, KeyRound, Pencil, Trash2, Download, Copy, UserX, Smartphone, FileSpreadsheet, Printer } from 'lucide-react';
+import { openCards } from '../../lib/cards';
 import { toast } from 'sonner';
 import { api, toForm } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
@@ -71,6 +72,7 @@ function CredentialsModal({ creds, onClose }) {
     <Modal open onClose={onClose} title="بيانات الدخول" subtitle="احفظها وسلّمها للمستخدمين — مش هتظهر تاني" size="lg"
       footer={<>
         <Button variant="secondary" icon={Copy} onClick={copy}>نسخ</Button>
+        <Button variant="secondary" icon={Printer} onClick={() => openCards(creds)}>طباعة كروت الدخول</Button>
         <Button icon={Download} onClick={() => downloadCsv('passwords.csv', [['الاسم', 'اسم المستخدم', 'كلمة السر'], ...creds.map((c) => [c.name, c.username, c.password])])}>تحميل Excel</Button>
       </>}>
       <Alert tone="amber" className="mb-4">كل مستخدم هيُطلب منه تغيير كلمة السر أول مرة يدخل.</Alert>

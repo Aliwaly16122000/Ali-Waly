@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, UserPlus, Users, Trash2, Save, Search, GraduationCap, ExternalLink } from 'lucide-react';
+import { ChevronRight, UserPlus, Users, Trash2, Save, Search, GraduationCap, ExternalLink, Printer } from 'lucide-react';
+import { openCards } from '../../lib/cards';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
@@ -107,6 +108,21 @@ export default function CourseManage() {
   const [q, setQ] = useState('');
   const [removing, setRemoving] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [cardsOpen, setCardsOpen] = useState(false);
+  const [includeActive, setIncludeActive] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const issueCards = async () => {
+    setIssuing(true);
+    try {
+      const r = await api.post('/admin/users/issue-credentials', { course_id: Number(id), include_active: includeActive });
+      if (!r.cards.length) toast.info(`كل المستخدمين دخلوا قبل كده (${r.skipped}) — فعّل الاختيار لو عايز تعمل لهم كلمات سر جديدة`);
+      else { openCards(r.cards); setCardsOpen(false); }
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIssuing(false);
+    }
+  };
 
   const current = useMemo(() => staff ?? (course ? {
     doctors: course.staff.filter((s) => s.role === 'doctor').map((s) => s.id),
@@ -152,6 +168,7 @@ export default function CourseManage() {
       <PageHeader title={course.name} subtitle={`${course.code} · ${course.department_name ?? ''} · ${LEVEL_LABELS[course.level] ?? ''}`}
         actions={<>
           <Button variant="secondary" icon={ExternalLink} to={`/courses/${id}`}>صفحة المادة</Button>
+          <Button variant="secondary" icon={Printer} onClick={() => setCardsOpen(true)}>كروت دخول المادة</Button>
           <Button variant="ghost" icon={Trash2} className="hover:text-rose-600" onClick={() => setDeleting(true)}>حذف المادة</Button>
         </>} />
       <div className="grid lg:grid-cols-3 gap-6">
@@ -185,6 +202,14 @@ export default function CourseManage() {
       </div>
       {enrolling && <EnrollModal course={course} departments={departments || []} onClose={() => setEnrolling(false)} onDone={() => { setEnrolling(false); reload(true); reloadCourses(true); }} />}
       <ConfirmModal open={!!removing} onClose={() => setRemoving(null)} onConfirm={unenroll} title="إلغاء تسجيل الطالب" message={`إلغاء تسجيل ${removing?.name} من المادة؟`} confirmLabel="إلغاء التسجيل" />
+      <Modal open={cardsOpen} onClose={() => setCardsOpen(false)} title="كروت دخول المادة" subtitle="كارت لكل طالب ولهيئة التدريس فيه اسم المستخدم وكلمة سر مؤقتة وكود QR"
+        footer={<><Button variant="secondary" onClick={() => setCardsOpen(false)}>إلغاء</Button><Button icon={Printer} loading={issuing} onClick={issueCards}>إنشاء وطباعة</Button></>}>
+        <p className="text-sm text-muted mb-3">هيتعمل كلمة سر مؤقتة جديدة لكل واحد، وأول ما يدخل هيغيرها. الكروت بتتفتح في صفحة جديدة جاهزة للطباعة (8 كروت في الورقة).</p>
+        <label className="flex items-center gap-2 text-sm font-semibold">
+          <input type="checkbox" className="size-4 accent-brand-600" checked={includeActive} onChange={(e) => setIncludeActive(e.target.checked)} />
+          تشمل اللي دخلوا قبل كده (كلمة السر الحالية بتاعتهم هتتلغي)
+        </label>
+      </Modal>
       <ConfirmModal open={deleting} onClose={() => setDeleting(false)} onConfirm={deleteCourse} title="حذف المادة" message="هيتم حذف المادة وكل الشيتات والدرجات والحضور الخاص بيها نهائياً." confirmLabel="حذف نهائياً" />
     </>
   );
