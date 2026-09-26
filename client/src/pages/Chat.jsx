@@ -11,8 +11,13 @@ import { openConversation } from '../lib/chat';
 import { Avatar, Badge, Button, Card, EmptyState, Input, Modal, Spinner, cx } from '../components/ui';
 
 function NewChatModal({ open, onClose }) {
-  const { data } = useApi(open ? '/chat/contacts' : null);
+  const { user } = useAuth();
+  const isAdmin = user.role === 'admin';
   const [q, setQ] = useState('');
+  const [debounced, setDebounced] = useState('');
+  useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 300); return () => clearTimeout(t); }, [q]);
+  // Admin searches students on the server; everyone else filters their course contacts locally.
+  const { data } = useApi(open ? `/chat/contacts${isAdmin && debounced.length >= 2 ? `?q=${encodeURIComponent(debounced)}` : ''}` : null);
   const navigate = useNavigate();
   const start = async (id) => {
     try {
@@ -24,7 +29,7 @@ function NewChatModal({ open, onClose }) {
     }
   };
   return (
-    <Modal open={open} onClose={onClose} title="محادثة جديدة" subtitle="تقدر تراسل الدكاترة والمعيدين والطلاب في موادك">
+    <Modal open={open} onClose={onClose} title="محادثة جديدة" subtitle={isAdmin ? 'تقدر تراسل أي حد في الكلية — اكتب اسم الطالب أو كوده للبحث' : 'تقدر تراسل الدكاترة والمعيدين والطلاب في موادك'}>
       <div className="relative mb-4">
         <Search className="size-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
         <Input className="pr-9" placeholder="ابحث بالاسم" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
@@ -32,11 +37,11 @@ function NewChatModal({ open, onClose }) {
       {!data ? <div className="grid place-items-center py-8"><Spinner /></div> : !data.length ? <EmptyState title="لا توجد جهات اتصال" /> : (
         <div className="space-y-5">
           {data.map((g) => {
-            const members = g.members.filter((m) => !q || m.name.includes(q));
+            const members = g.members.filter((m) => !q || m.name.includes(q) || (m.role === 'student' && isAdmin));
             if (!members.length) return null;
             return (
               <div key={g.course_id}>
-                <p className="text-xs font-bold text-muted mb-2">{g.course_name} · <span className="ltr">{g.course_code}</span></p>
+                <p className="text-xs font-bold text-muted mb-2">{g.course_name}{g.course_code && <> · <span className="ltr">{g.course_code}</span></>}</p>
                 <div className="space-y-1">
                   {members.map((m) => (
                     <button key={`${g.course_id}-${m.id}`} onClick={() => start(m.id)} className="w-full flex items-center gap-3 rounded-xl p-2 hover:bg-surface-2 text-right">

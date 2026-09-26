@@ -71,8 +71,8 @@ function AppRoutes() {
             <Route path="courses/:courseId/assessments/:id" element={<AssessmentDetail />} />
             <Route path="scan" element={<Protected roles={['student']}><Scan /></Protected>} />
             <Route path="attend" element={<Protected roles={['student']}><Scan /></Protected>} />
-            <Route path="chat" element={<Protected roles={['student', 'ta', 'doctor']}><Chat /></Protected>} />
-            <Route path="chat/:id" element={<Protected roles={['student', 'ta', 'doctor']}><Chat /></Protected>} />
+            <Route path="chat" element={<Protected roles={['student', 'ta', 'doctor', 'admin']}><Chat /></Protected>} />
+            <Route path="chat/:id" element={<Protected roles={['student', 'ta', 'doctor', 'admin']}><Chat /></Protected>} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="calendar" element={<CalendarPage />} />
             <Route path="surveys" element={<Protected roles={['student']}><SurveyList /></Protected>} />

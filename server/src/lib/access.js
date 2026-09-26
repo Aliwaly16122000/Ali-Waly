@@ -48,6 +48,9 @@ export const courseStaffIds = (courseId, role) =>
 /** Two users may chat when they share a course and at least one of them is staff on it. */
 export function canChat(aId, bId) {
   if (aId === bId) return false;
+  // The faculty admin can message anyone (and be answered); everyone else chats within their courses.
+  const roles = db.prepare('SELECT role FROM users WHERE id IN (?, ?) AND is_active = 1').pluck().all(aId, bId);
+  if (roles.length === 2 && roles.includes('admin')) return true;
   const row = db.prepare(`
     WITH members AS (
       SELECT course_id, user_id, 1 AS staff FROM course_staff

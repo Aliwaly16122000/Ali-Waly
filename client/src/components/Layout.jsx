@@ -31,6 +31,7 @@ function navFor(role, user) {
       { to: '/calendar', label: 'التقويم الأكاديمي', icon: CalendarRange },
       { to: '/admin/surveys', label: 'الاستبيانات', icon: ClipboardCheck },
       { to: '/admin/broadcast', label: 'إعلانات الكلية', icon: Megaphone },
+      { to: '/chat', label: 'المحادثات', icon: MessagesSquare, badge: 'messages' },
       { to: '/admin/system', label: 'إعدادات الكلية', icon: DatabaseBackup },
       { to: '/courses', label: 'استعراض المواد', icon: BookOpen },
     ];
