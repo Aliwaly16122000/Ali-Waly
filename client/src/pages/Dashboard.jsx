@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   BookOpen, FileText, Award, CalendarCheck, QrCode, Megaphone, ChevronLeft, ClipboardCheck, Users,
   Building2, Library, GraduationCap, UserCheck, AlertTriangle, Radio, Inbox, Clock, CalendarDays, ClipboardList,
@@ -342,6 +342,7 @@ export default function Dashboard() {
   const { data, error, loading, reload } = useApi('/dashboard');
   if (loading && !data) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (user.role === 'leader') return <Navigate to="/oversight" replace />;
   if (user.role === 'student') return <StudentDashboard data={data} user={user} />;
   if (user.role === 'admin') return <AdminDashboard data={data} user={user} />;
   return <StaffDashboard data={data} user={user} />;

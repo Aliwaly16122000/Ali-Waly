@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, QrCode, MessagesSquare, Bell, Building2, Users, Library, LogOut,
-  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList,
+  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList, Landmark, Gauge,
 } from 'lucide-react';
 import { Logo, BrandTitle } from '../context/BrandingContext';
 import HeaderClock from './HeaderClock';
@@ -13,10 +13,17 @@ import { ROLE_LABELS, titled, timeAgo } from '../lib/format';
 import { Avatar, IconButton, cx, Spinner } from './ui';
 import { NotificationIcon } from './NotificationIcon';
 
-function navFor(role) {
+function navFor(role, user) {
   const common = [{ to: '/', label: 'الرئيسية', icon: LayoutDashboard, end: true }];
+  const follow = user?.oversight?.length ? [{ to: '/oversight', label: 'لوحة المتابعة', icon: Gauge }] : [];
+  if (role === 'leader') {
+    return [{ to: '/oversight', label: 'لوحة المتابعة', icon: Gauge }, { to: '/calendar', label: 'التقويم الأكاديمي', icon: CalendarRange },
+      { to: '/notifications', label: 'الإشعارات', icon: Bell, badge: 'notifications' }];
+  }
   if (role === 'admin') {
     return [...common,
+      { to: '/oversight', label: 'لوحة المتابعة', icon: Gauge },
+      { to: '/admin/faculties', label: 'الكليات والقيادات', icon: Landmark },
       { to: '/admin/departments', label: 'الأقسام', icon: Building2 },
       { to: '/admin/users', label: 'المستخدمون', icon: Users },
       { to: '/admin/courses', label: 'المواد والتسجيل', icon: Library },
@@ -27,7 +34,7 @@ function navFor(role) {
       { to: '/courses', label: 'استعراض المواد', icon: BookOpen },
     ];
   }
-  return [...common,
+  return [...common, ...follow,
     { to: '/courses', label: 'موادي', icon: BookOpen },
     { to: '/schedule', label: 'جدولي', icon: CalendarDays },
     { to: '/calendar', label: 'التقويم', icon: CalendarRange },
@@ -149,7 +156,7 @@ function Sidebar({ items, badges, onNavigate, user, onLogout }) {
           <Avatar name={user.name} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold truncate">{titled(user)}</p>
-            <p className="text-xs text-muted truncate">{ROLE_LABELS[user.role]}{user.department_name ? ` · ${user.department_name}` : ''}</p>
+            <p className="text-xs text-muted truncate">{user.oversight?.[0]?.title || ROLE_LABELS[user.role]}{user.department_name ? ` · ${user.department_name}` : ''}</p>
           </div>
           <UserCog className="size-4 text-muted" />
         </NavLink>
@@ -168,7 +175,7 @@ export default function Layout() {
   const [drawer, setDrawer] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const items = navFor(user.role);
+  const items = navFor(user.role, user);
   const badges = { messages: unreadMessages, notifications: unreadNotifications };
 
   useEffect(() => setDrawer(false), [location.pathname]);

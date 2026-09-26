@@ -16,7 +16,7 @@ import { upload, storedName, removeUpload } from '../lib/upload.js';
 const router = Router();
 router.use(requireRole('admin'));
 
-const ROLES = ['admin', 'doctor', 'ta', 'student'];
+const ROLES = ['admin', 'doctor', 'ta', 'student', 'leader'];
 
 /** Readable temporary password without ambiguous characters. */
 export function generatePassword(len = 8) {
@@ -31,6 +31,7 @@ const isUnique = (err) => err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || err?.code 
 router.get('/overview', (_req, res) => {
   const count = (sql, ...a) => db.prepare(sql).pluck().get(...a);
   res.json({
+    faculties: count('SELECT COUNT(*) FROM faculties'),
     departments: count('SELECT COUNT(*) FROM departments'),
     courses: count('SELECT COUNT(*) FROM courses'),
     students: count("SELECT COUNT(*) FROM users WHERE role = 'student'"),
@@ -108,19 +109,26 @@ router.get('/backups/:name', (req, res) => {
 });
 
 // ───────────── Departments ─────────────
-const deptSchema = z.object({ name: z.string().trim().min(2), code: z.string().trim().min(1).max(12).toUpperCase() });
+const deptSchema = z.object({
+  name: z.string().trim().min(2),
+  code: z.string().trim().min(1).max(12).toUpperCase(),
+  faculty_id: z.number().int().positive().nullish(),
+});
 
 router.get('/departments', (_req, res) => {
   res.json(db.prepare(`
-    SELECT d.*, (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id AND u.role = 'student') AS students,
-           (SELECT COUNT(*) FROM courses c WHERE c.department_id = d.id) AS courses
-    FROM departments d ORDER BY d.name`).all());
+    SELECT d.*, f.name AS faculty_name,
+           (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id AND u.role = 'student') AS students,
+           (SELECT COUNT(*) FROM courses c WHERE c.department_id = d.id) AS courses,
+           (SELECT group_concat(u.name, '، ') FROM oversight o JOIN users u ON u.id = o.user_id
+              WHERE o.scope = 'department' AND o.scope_id = d.id) AS heads
+    FROM departments d LEFT JOIN faculties f ON f.id = d.faculty_id ORDER BY f.name, d.name`).all());
 });
 
 router.post('/departments', (req, res) => {
   const d = parse(deptSchema, req.body);
   try {
-    const { lastInsertRowid } = db.prepare('INSERT INTO departments (name, code) VALUES (?, ?)').run(d.name, d.code);
+    const { lastInsertRowid } = db.prepare('INSERT INTO departments (name, code, faculty_id) VALUES (?, ?, ?)').run(d.name, d.code, d.faculty_id ?? null);
     res.status(201).json({ id: Number(lastInsertRowid) });
   } catch (err) {
     if (isUnique(err)) throw badRequest('كود القسم مستخدم بالفعل');
@@ -131,7 +139,7 @@ router.post('/departments', (req, res) => {
 router.put('/departments/:id', (req, res) => {
   const d = parse(deptSchema, req.body);
   try {
-    const r = db.prepare('UPDATE departments SET name = ?, code = ? WHERE id = ?').run(d.name, d.code, toId(req.params.id));
+    const r = db.prepare('UPDATE departments SET name = ?, code = ?, faculty_id = ? WHERE id = ?').run(d.name, d.code, d.faculty_id ?? null, toId(req.params.id));
     if (!r.changes) throw notFound();
   } catch (err) {
     if (isUnique(err)) throw badRequest('كود القسم مستخدم بالفعل');
@@ -141,7 +149,92 @@ router.put('/departments/:id', (req, res) => {
 });
 
 router.delete('/departments/:id', (req, res) => {
-  db.prepare('DELETE FROM departments WHERE id = ?').run(toId(req.params.id));
+  const id = toId(req.params.id);
+  db.transaction(() => {
+    db.prepare("DELETE FROM oversight WHERE scope = 'department' AND scope_id = ?").run(id);
+    db.prepare('DELETE FROM departments WHERE id = ?').run(id);
+  })();
+  res.json({ ok: true });
+});
+
+// ───────────── Faculties ─────────────
+const facultySchema = z.object({ name: z.string().trim().min(2, 'اسم الكلية قصير'), code: z.string().trim().min(1).max(12).toUpperCase() });
+
+router.get('/faculties', (_req, res) => {
+  res.json(db.prepare(`
+    SELECT f.*,
+      (SELECT COUNT(*) FROM departments d WHERE d.faculty_id = f.id) AS departments,
+      (SELECT COUNT(*) FROM users u JOIN departments d ON d.id = u.department_id WHERE d.faculty_id = f.id AND u.role = 'student') AS students,
+      (SELECT group_concat(u.name, '، ') FROM oversight o JOIN users u ON u.id = o.user_id WHERE o.scope = 'faculty' AND o.scope_id = f.id) AS deans
+    FROM faculties f ORDER BY f.name`).all());
+});
+
+router.post('/faculties', (req, res) => {
+  const f = parse(facultySchema, req.body);
+  try {
+    res.status(201).json({ id: Number(db.prepare('INSERT INTO faculties (name, code) VALUES (?, ?)').run(f.name, f.code).lastInsertRowid) });
+  } catch (err) {
+    if (isUnique(err)) throw badRequest('كود الكلية مستخدم بالفعل');
+    throw err;
+  }
+});
+
+router.put('/faculties/:id', (req, res) => {
+  const f = parse(facultySchema, req.body);
+  try {
+    if (!db.prepare('UPDATE faculties SET name = ?, code = ? WHERE id = ?').run(f.name, f.code, toId(req.params.id)).changes) throw notFound();
+  } catch (err) {
+    if (isUnique(err)) throw badRequest('كود الكلية مستخدم بالفعل');
+    throw err;
+  }
+  res.json({ ok: true });
+});
+
+/** Deleting a faculty keeps its departments (they become unassigned) — nothing else is lost. */
+router.delete('/faculties/:id', (req, res) => {
+  const id = toId(req.params.id);
+  db.transaction(() => {
+    db.prepare("DELETE FROM oversight WHERE scope = 'faculty' AND scope_id = ?").run(id);
+    db.prepare('DELETE FROM faculties WHERE id = ?').run(id);
+  })();
+  res.json({ ok: true });
+});
+
+// ───────────── Leadership (read-only follow-up rights) ─────────────
+router.get('/oversight', (_req, res) => {
+  res.json(db.prepare(`
+    SELECT o.*, u.name, u.username, u.role,
+      CASE o.scope WHEN 'department' THEN d.name WHEN 'faculty' THEN f.name ELSE 'الجامعة' END AS scope_name
+    FROM oversight o JOIN users u ON u.id = o.user_id
+    LEFT JOIN departments d ON o.scope = 'department' AND d.id = o.scope_id
+    LEFT JOIN faculties f ON o.scope = 'faculty' AND f.id = o.scope_id
+    ORDER BY CASE o.scope WHEN 'university' THEN 0 WHEN 'faculty' THEN 1 ELSE 2 END, scope_name`).all());
+});
+
+const DEFAULT_TITLES = { department: 'رئيس القسم', faculty: 'عميد الكلية', university: 'رئيس الجامعة' };
+
+router.post('/oversight', (req, res) => {
+  const o = parse(z.object({
+    user_id: z.number().int().positive(),
+    scope: z.enum(['department', 'faculty', 'university']),
+    scope_id: z.number().int().min(0).default(0),
+    title: z.string().trim().max(60).nullish(),
+  }), req.body);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(o.user_id);
+  if (!user) throw notFound('المستخدم غير موجود');
+  if (user.role === 'student') throw badRequest('لا يمكن إعطاء صلاحية متابعة لطالب');
+  const table = { department: 'departments', faculty: 'faculties' }[o.scope];
+  if (table && !db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(o.scope_id)) throw badRequest('اختر القسم أو الكلية');
+  const scopeId = o.scope === 'university' ? 0 : o.scope_id;
+  db.prepare(`INSERT INTO oversight (user_id, scope, scope_id, title) VALUES (?, ?, ?, ?)
+    ON CONFLICT (user_id, scope, scope_id) DO UPDATE SET title = excluded.title`).run(o.user_id, o.scope, scopeId, o.title || DEFAULT_TITLES[o.scope]);
+  notify(o.user_id, { type: 'course', title: `تم تعيينك: ${o.title || DEFAULT_TITLES[o.scope]}`, body: 'تقدر تتابع الإحصائيات من "لوحة المتابعة"', link: '/oversight' });
+  res.status(201).json({ ok: true });
+});
+
+router.delete('/oversight', (req, res) => {
+  const o = parse(z.object({ user_id: z.coerce.number().int().positive(), scope: z.enum(['department', 'faculty', 'university']), scope_id: z.coerce.number().int().min(0) }), req.query);
+  db.prepare('DELETE FROM oversight WHERE user_id = ? AND scope = ? AND scope_id = ?').run(o.user_id, o.scope, o.scope_id);
   res.json({ ok: true });
 });
 

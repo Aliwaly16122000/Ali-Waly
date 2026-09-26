@@ -29,6 +29,8 @@ const StartSlotAttendance = lazy(() => import('./pages/StartSlotAttendance'));
 const CalendarPage = lazy(() => import('./pages/Calendar'));
 const Exams = lazy(() => import('./pages/Exams'));
 const AdminExams = lazy(() => import('./pages/admin/Exams'));
+const Oversight = lazy(() => import('./pages/Oversight'));
+const AdminFaculties = lazy(() => import('./pages/admin/Faculties'));
 
 function Protected({ roles, children }) {
   const { user } = useAuth();
@@ -68,6 +70,9 @@ function AppRoutes() {
             <Route path="chat/:id" element={<Protected roles={['student', 'ta', 'doctor']}><Chat /></Protected>} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="calendar" element={<CalendarPage />} />
+            <Route path="oversight" element={<Oversight />} />
+            <Route path="oversight/:level/:id" element={<Oversight />} />
+            <Route path="admin/faculties" element={<Protected roles={['admin']}><AdminFaculties /></Protected>} />
             <Route path="exams" element={<Protected roles={['student', 'ta', 'doctor']}><Exams /></Protected>} />
             <Route path="admin/exams" element={<Protected roles={['admin']}><AdminExams /></Protected>} />
             <Route path="schedule" element={<Protected roles={['student', 'ta', 'doctor']}><MySchedule /></Protected>} />

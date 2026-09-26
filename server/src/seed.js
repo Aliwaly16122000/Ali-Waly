@@ -32,8 +32,14 @@ const departments = [
   ['الهندسة المعمارية', 'ARC'],
 ];
 
-const insDept = db.prepare('INSERT INTO departments (name, code) VALUES (?, ?)');
-const dept = Object.fromEntries(departments.map(([name, code]) => [code, Number(insDept.run(name, code).lastInsertRowid)]));
+const insFaculty = db.prepare('INSERT INTO faculties (name, code) VALUES (?, ?)');
+const faculty = {
+  eng: Number(insFaculty.run('كلية الهندسة', 'ENG').lastInsertRowid),
+  cis: Number(insFaculty.run('كلية الحاسبات والمعلومات', 'FCI').lastInsertRowid),
+};
+const insDept = db.prepare('INSERT INTO departments (name, code, faculty_id) VALUES (?, ?, ?)');
+const dept = Object.fromEntries(departments.map(([name, code]) => [code, Number(insDept.run(name, code, faculty.eng).lastInsertRowid)]));
+dept.IS = Number(insDept.run('نظم المعلومات', 'IS', faculty.cis).lastInsertRowid);
 
 const insUser = db.prepare(`INSERT INTO users (name, username, email, role, department_id, level, password_hash, must_change_password)
   VALUES (?, ?, ?, ?, ?, ?, ?, 0)`);
@@ -41,6 +47,10 @@ const addUser = (name, username, role, deptCode, level, password) =>
   Number(insUser.run(name, username, `${username.replace(/[^\w.]/g, '')}@eng.edu.eg`, role, deptCode ? dept[deptCode] : null, level ?? null, hash(password)).lastInsertRowid);
 
 addUser('مدير النظام', 'admin', 'admin', null, null, 'admin123');
+const leaders = {
+  president: addUser('محمد عبد الله', 'president', 'leader', null, null, 'leader123'),
+  dean: addUser('سعاد إبراهيم', 'dean.eng', 'leader', null, null, 'leader123'),
+};
 
 const doctors = {
   ahmed: addUser('أحمد عبد الرحمن', 'd.ahmed', 'doctor', 'CSE', null, 'doctor123'),
@@ -225,6 +235,14 @@ db.prepare("INSERT INTO settings (key, value) VALUES ('brand_university', 'جا�
   }
 }
 
+// ───────────── Leadership ─────────────
+{
+  const insO = db.prepare('INSERT INTO oversight (user_id, scope, scope_id, title) VALUES (?, ?, ?, ?)');
+  insO.run(leaders.president, 'university', 0, 'رئيس الجامعة');
+  insO.run(leaders.dean, 'faculty', faculty.eng, 'عميد كلية الهندسة');
+  insO.run(doctors.ahmed, 'department', dept.CSE, 'رئيس قسم الحاسبات');
+}
+
 // ───────────── Posts ─────────────
 const insPost = db.prepare('INSERT INTO posts (course_id, author_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)');
 insPost.run(c.ds, doctors.ahmed, 'announcement', 'موعد الميدترم', 'الميدترم يوم الأحد القادم الساعة 10 صباحاً في المدرج الكبير. المنهج حتى نهاية الأشجار (Trees).', iso(daysFromNow(-10)));
@@ -252,4 +270,6 @@ console.table([
   { role: 'Doctor (د. أحمد)', username: 'd.ahmed', password: 'doctor123' },
   { role: 'TA (م. منى)', username: 'ta.mona', password: 'ta123456' },
   { role: 'Student (CSE - الفرقة الثالثة)', username: '2023001', password: 'student123' },
+  { role: 'President (رئيس الجامعة)', username: 'president', password: 'leader123' },
+  { role: 'Dean (عميد الهندسة)', username: 'dean.eng', password: 'leader123' },
 ]);

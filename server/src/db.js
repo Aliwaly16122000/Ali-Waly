@@ -16,6 +16,13 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS faculties (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  code       TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE TABLE IF NOT EXISTS departments (
   id         INTEGER PRIMARY KEY,
   name       TEXT NOT NULL,
@@ -29,7 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
   username             TEXT NOT NULL UNIQUE COLLATE NOCASE,
   email                TEXT,
   phone                TEXT,
-  role                 TEXT NOT NULL CHECK (role IN ('admin','doctor','ta','student')),
+  role                 TEXT NOT NULL CHECK (role IN ('admin','doctor','ta','student','leader')),
   department_id        INTEGER REFERENCES departments(id) ON DELETE SET NULL,
   level                INTEGER,
   password_hash        TEXT NOT NULL,
@@ -283,6 +290,15 @@ CREATE TABLE IF NOT EXISTS exam_seating (
   PRIMARY KEY (academic_year, semester, period, student_id)
 );
 
+-- Read-only follow-up rights: head of department, dean (faculty) or university president.
+CREATE TABLE IF NOT EXISTS oversight (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope    TEXT NOT NULL CHECK (scope IN ('department','faculty','university')),
+  scope_id INTEGER NOT NULL DEFAULT 0, -- department/faculty id; 0 for the whole university
+  title    TEXT,
+  PRIMARY KEY (user_id, scope, scope_id)
+);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -299,6 +315,31 @@ function addColumn(table, column, definition) {
   if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 addColumn('courses', 'grading_scheme', 'TEXT');
+addColumn('departments', 'faculty_id', 'INTEGER REFERENCES faculties(id) ON DELETE SET NULL');
+
+// Databases created before the 'leader' role existed: rebuild users with the wider CHECK
+// (SQLite can't alter a CHECK constraint in place).
+{
+  const usersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").pluck().get();
+  if (usersSql && !usersSql.includes("'leader'")) {
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec(usersSql.replace('CREATE TABLE users', 'CREATE TABLE users_new').replace("'student'))", "'student','leader'))"));
+      db.exec('INSERT INTO users_new SELECT * FROM users');
+      db.exec('DROP TABLE users');
+      db.exec('ALTER TABLE users_new RENAME TO users');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role, department_id, level)');
+    })();
+    db.pragma('foreign_keys = ON');
+  }
+}
+
+// Existing single-faculty installs: put departments without a faculty under a default one.
+if (db.prepare('SELECT 1 FROM departments WHERE faculty_id IS NULL LIMIT 1').get()) {
+  let fid = db.prepare('SELECT id FROM faculties ORDER BY id LIMIT 1').pluck().get();
+  if (!fid) fid = Number(db.prepare("INSERT INTO faculties (name, code) VALUES ('كلية الهندسة', 'ENG')").run().lastInsertRowid);
+  db.prepare('UPDATE departments SET faculty_id = ? WHERE faculty_id IS NULL').run(fid);
+}
 addColumn('users', 'section', 'TEXT'); // student's default section, used when enrolling a cohort
 addColumn('assessments', 'reminded_at', 'TEXT');
 addColumn('attendance_sessions', 'warnings_sent_at', 'TEXT');

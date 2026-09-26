@@ -3,7 +3,7 @@ import { z } from 'zod';
 import db from '../db.js';
 import { assertCurrentTerm } from '../lib/term.js';
 import { ah, parse, badRequest, forbidden, notFound, toId } from '../lib/http.js';
-import { courseAccess, courseStudentIds, courseStaffIds } from '../lib/access.js';
+import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
 import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
 import { notify } from '../lib/notify.js';
 import { nowIso } from '../lib/time.js';
@@ -301,7 +301,7 @@ router.put('/:id/grades', (req, res) => {
 
 /** Audit trail for an assessment (optionally one student). */
 router.get('/:id/history', (req, res) => {
-  const { a } = loadAssessment(req, ['doctor', 'ta']);
+  const { a } = loadAssessment(req, READERS);
   const studentId = req.query.student_id ? toId(req.query.student_id) : null;
   res.json(db.prepare(`
     SELECT h.*, u.name AS changed_by_name, u.role AS changed_by_role, st.name AS student_name, st.username AS student_username

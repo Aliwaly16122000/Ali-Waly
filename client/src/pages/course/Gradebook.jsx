@@ -53,7 +53,7 @@ export default function Gradebook({ course }) {
             <option value="">كل السكاشن</option>{sections.map((s) => <option key={s}>{s}</option>)}
           </Select>
         )}
-        <Button variant="secondary" icon={Scale} onClick={() => setSchemeOpen(true)}>توزيع الدرجات</Button>
+        {course.my_role !== 'observer' && <Button variant="secondary" icon={Scale} onClick={() => setSchemeOpen(true)}>توزيع الدرجات</Button>}
         <Button icon={Download} onClick={() => setExportOpen(true)}>تصدير Excel</Button>
       </div>
       {scheme ? (

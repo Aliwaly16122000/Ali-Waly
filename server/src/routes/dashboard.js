@@ -47,6 +47,8 @@ router.get('/', (req, res) => {
     });
   }
 
+  if (user.role === 'leader') return res.json({ leader: true });
+
   if (user.role === 'doctor' || user.role === 'ta') {
     const toGrade = db.prepare(`
       SELECT a.id, a.title, a.type, a.status, a.review_note, a.due_at, c.id AS course_id, c.name AS course_name,
@@ -84,6 +86,7 @@ router.get('/', (req, res) => {
 
   const count = (sql) => db.prepare(sql).pluck().get();
   res.json({
+    faculties: count('SELECT COUNT(*) FROM faculties'),
     departments: count('SELECT COUNT(*) FROM departments'),
     courses: count('SELECT COUNT(*) FROM courses'),
     students: count("SELECT COUNT(*) FROM users WHERE role = 'student'"),

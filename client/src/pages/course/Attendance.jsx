@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
 import { fmtDateTime, pctTone, timeAgo } from '../../lib/format';
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, PageLoader, Progress, Select, StatCard, Table, Td, Th, Spinner } from '../../components/ui';
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, PageLoader, Progress, Select, StatCard, Table, Td, Th, Spinner, cx } from '../../components/ui';
 
 function GeoSettings({ course }) {
   const [form, setForm] = useState({
@@ -81,7 +81,7 @@ function GeoSettings({ course }) {
   );
 }
 
-function SessionRoster({ sessionId, onChanged }) {
+function SessionRoster({ sessionId, onChanged, readOnly }) {
   const { data, loading, reload } = useApi(`/attendance/${sessionId}`);
   if (loading && !data) return <div className="py-6 grid place-items-center"><Spinner /></div>;
   const toggle = async (s) => {
@@ -101,7 +101,7 @@ function SessionRoster({ sessionId, onChanged }) {
             <Td><span className="font-semibold">{s.name}</span> <span className="text-xs text-muted ltr">{s.username}</span></Td>
             <Td className="text-muted text-xs">{s.section}</Td>
             <Td>{s.recorded_at ? <Badge tone="green">حاضر · {s.method === 'qr' ? 'QR' : s.method === 'code' ? 'كود' : 'يدوي'}{s.distance_m != null ? ` · ${Math.round(s.distance_m)} م` : ''}</Badge> : <Badge tone="red">غائب</Badge>}</Td>
-            <Td className="text-left"><Button size="sm" variant="ghost" onClick={() => toggle(s)}>{s.recorded_at ? 'تسجيل غياب' : 'تسجيل حضور'}</Button></Td>
+            <Td className="text-left">{!readOnly && <Button size="sm" variant="ghost" onClick={() => toggle(s)}>{s.recorded_at ? 'تسجيل غياب' : 'تسجيل حضور'}</Button>}</Td>
           </tr>
         ))}
       </tbody>
@@ -110,6 +110,7 @@ function SessionRoster({ sessionId, onChanged }) {
 }
 
 function StaffAttendance({ course, data, reload }) {
+  const readOnly = course.my_role === 'observer';
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: `محاضرة ${data.sessions.length + 1}`, duration_minutes: 15, rotate_seconds: 15 });
@@ -135,7 +136,7 @@ function StaffAttendance({ course, data, reload }) {
   return (
     <>
       <div className="grid sm:grid-cols-3 gap-4 mb-6">
-        <Card className="p-5 sm:col-span-1 bg-gradient-to-br from-brand-600 to-brand-800 text-white border-0 flex flex-col justify-between gap-4">
+        <Card className={cx('p-5 sm:col-span-1 bg-gradient-to-br from-brand-600 to-brand-800 text-white border-0 flex flex-col justify-between gap-4', readOnly && 'hidden')}>
           <div>
             <QrCode className="size-8 text-amber-300 mb-2" />
             <p className="font-bold text-lg">افتح تسجيل حضور</p>
@@ -147,7 +148,7 @@ function StaffAttendance({ course, data, reload }) {
         <StatCard icon={CheckCircle2} label="متوسط الحضور" value={avg === null ? '—' : `${avg}%`} tone={pctTone(avg)} />
       </div>
 
-      <GeoSettings course={course} />
+      {!readOnly && <GeoSettings course={course} />}
 
       {active.map((s) => (
         <Card key={s.id} className="p-4 mb-4 flex flex-wrap items-center gap-3 border-emerald-300 dark:border-emerald-500/40">
@@ -172,7 +173,7 @@ function StaffAttendance({ course, data, reload }) {
               <span className="text-sm font-bold ltr w-16 text-left">{s.present_count}/{data.students_count}</span>
               {expanded === s.id ? <ChevronUp className="size-4 text-muted" /> : <ChevronDown className="size-4 text-muted" />}
             </button>
-            {expanded === s.id && <div className="bg-surface-2/50 border-t border-line"><SessionRoster sessionId={s.id} onChanged={() => reload(true)} /></div>}
+            {expanded === s.id && <div className="bg-surface-2/50 border-t border-line"><SessionRoster sessionId={s.id} readOnly={readOnly} onChanged={() => reload(true)} /></div>}
           </div>
         ))}
       </Card>

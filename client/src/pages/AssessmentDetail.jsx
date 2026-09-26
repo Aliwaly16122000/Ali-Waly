@@ -401,7 +401,8 @@ function StaffView({ a, reload, courseId }) {
   const [returnNote, setReturnNote] = useState('');
   const [busy, setBusy] = useState(false);
   const isDoctor = a.my_role === 'doctor' || a.my_role === 'admin';
-  const editable = isDoctor || a.status === 'open';
+  const readOnly = a.my_role === 'observer';
+  const editable = !readOnly && (isDoctor || a.status === 'open');
 
   const graded = a.roster.filter((r) => r.score !== null);
   const submitted = a.roster.filter((r) => r.submitted_at);
@@ -441,7 +442,7 @@ function StaffView({ a, reload, courseId }) {
         {a.status === 'submitted' && (
           <Alert tone="amber" icon={Clock} className="mt-4">رفعها {a.submitted_by_name ?? 'المعيد'} {timeAgo(a.submitted_at)}. {isDoctor ? 'راجع الدرجات والإحصائيات ثم اعتمدها.' : 'التعديل متاح فقط لو الدكتور رجّعها.'}</Alert>
         )}
-        <div className="flex flex-wrap gap-2 mt-4">
+        <div className={cx('flex flex-wrap gap-2 mt-4', readOnly && 'hidden')}>
           {a.status === 'open' && !isDoctor && (
             <Button icon={Send} onClick={() => setConfirm('submit')}>خلصت التصحيح — ارفع للدكتور</Button>
           )}

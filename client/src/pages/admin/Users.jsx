@@ -11,7 +11,7 @@ import {
   PageHeader, PageLoader, Segmented, Select, Table, Td, Textarea, Th,
 } from '../../components/ui';
 
-const ROLE_TONE = { admin: 'red', doctor: 'blue', ta: 'violet', student: 'slate' };
+const ROLE_TONE = { admin: 'red', doctor: 'blue', ta: 'violet', student: 'slate', leader: 'amber' };
 
 function UserForm({ initial, departments, onClose, onSaved }) {
   const [form, setForm] = useState(() => initial?.id ? { ...initial, password: '' } : {
@@ -188,7 +188,7 @@ export default function Users() {
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 p-4 border-b border-line">
           <Segmented value={role} onChange={(r) => setParams({ role: r })}
-            options={[{ value: 'student', label: 'الطلاب' }, { value: 'doctor', label: 'الدكاترة' }, { value: 'ta', label: 'المعيدون' }, { value: 'admin', label: 'المسؤولون' }]} />
+            options={[{ value: 'student', label: 'الطلاب' }, { value: 'doctor', label: 'الدكاترة' }, { value: 'ta', label: 'المعيدون' }, { value: 'leader', label: 'القيادات' }, { value: 'admin', label: 'المسؤولون' }]} />
           <div className="relative flex-1 min-w-48">
             <Search className="size-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
             <Input className="pr-9" placeholder="بحث بالاسم أو الكود" value={q} onChange={(e) => setQ(e.target.value)} />

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import db from '../db.js';
 import { parse, badRequest, toId } from '../lib/http.js';
-import { courseAccess } from '../lib/access.js';
+import { courseAccess, READERS } from '../lib/access.js';
 import { describe, histogram, letterGrade, LETTERS, round } from '../lib/stats.js';
 import { buildGradebook, attendanceRates } from '../lib/gradebook.js';
 import { TYPE_LABELS } from './assessments.js';
@@ -13,7 +13,7 @@ const router = Router({ mergeParams: true });
 
 router.get('/gradebook', (req, res) => {
   const courseId = toId(req.params.courseId);
-  courseAccess(req.user, courseId, ['doctor', 'ta']);
+  courseAccess(req.user, courseId, READERS);
   res.json(buildGradebook(courseId));
 });
 
@@ -37,7 +37,7 @@ router.get('/my-grades', (req, res) => {
 /** Analytics for the doctor: distribution, pass rates, grading progress, attendance trend. */
 router.get('/stats', (req, res) => {
   const courseId = toId(req.params.courseId);
-  courseAccess(req.user, courseId, ['doctor', 'ta']);
+  courseAccess(req.user, courseId, READERS);
   const { assessments, rows, total_max, assessed_max, scheme, final_max } = buildGradebook(courseId);
 
   const perAssessment = assessments.map((a) => {
@@ -99,7 +99,7 @@ router.get('/stats', (req, res) => {
 // ───────────── Grading scheme (توزيع الدرجات) ─────────────
 router.get('/grading-scheme', (req, res) => {
   const courseId = toId(req.params.courseId);
-  courseAccess(req.user, courseId, ['doctor', 'ta']);
+  courseAccess(req.user, courseId, READERS);
   const { scheme, final_max } = buildGradebook(courseId);
   res.json({ scheme, final_max });
 });
@@ -166,7 +166,7 @@ const colLetter = (n) => {
  */
 router.get('/gradebook.xlsx', async (req, res) => {
   const courseId = toId(req.params.courseId);
-  const { course } = courseAccess(req.user, courseId, ['doctor', 'ta']);
+  const { course } = courseAccess(req.user, courseId, READERS);
   const gb = buildGradebook(courseId);
   const opt = (k) => req.query[k] !== '0';
   const includeRaw = opt('raw');

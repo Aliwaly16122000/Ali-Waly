@@ -325,3 +325,43 @@ test('branding: public name, admin-only changes and logo upload', async () => {
   bad.append('logo', new Blob(['hi']), 'x.txt');
   assert.equal((await admin.post('/branding/logo', bad)).status, 400);
 });
+
+test('leadership: president → faculties, dean → own faculty, head → own department, read-only', async () => {
+  const president = await client(srv.base, 'president', 'leader123');
+  const dean = await client(srv.base, 'dean.eng', 'leader123');
+  const uni = (await president.get('/oversight/university')).data;
+  assert.ok(uni.faculties.length >= 2);
+  const eng = uni.faculties.find((f) => f.name === 'كلية الهندسة');
+  assert.ok(eng.courses > 0 && eng.students > 0);
+
+  assert.equal((await dean.get('/oversight/university')).status, 403);
+  assert.equal((await dean.get(`/oversight/faculty/${eng.id}`)).status, 200);
+  const other = uni.faculties.find((f) => f.id !== eng.id);
+  assert.equal((await dean.get(`/oversight/faculty/${other.id}`)).status, 403);
+
+  // d.ahmed heads CSE (department 2) only
+  assert.equal((await doctor.get('/oversight/department/2')).status, 200);
+  assert.equal((await doctor.get('/oversight/department/3')).status, 403);
+  assert.equal((await ta.get('/oversight/department/2')).status, 403);
+
+  // observers can read course stats/gradebook but not change anything
+  assert.equal((await dean.get('/courses/4/stats')).status, 200);
+  assert.equal((await dean.get('/courses/4/gradebook')).status, 200);
+  assert.equal((await dean.put('/courses/4/grading-scheme', { scheme: null })).status, 403);
+  assert.equal((await dean.put('/assessments/1/grades', { grades: [{ student_id: 11, score: 1 }] })).status, 403);
+  assert.equal((await dean.post('/courses/4/attendance', { title: 'x' })).status, 403);
+});
+
+test('admin: faculties CRUD and leadership assignment', async () => {
+  const f = await admin.post('/admin/faculties', { name: 'كلية التجارة', code: 'COM' });
+  assert.equal(f.status, 201);
+  assert.equal((await admin.post('/admin/faculties', { name: 'مكرر', code: 'COM' })).status, 400);
+  const d = await admin.post('/admin/departments', { name: 'المحاسبة', code: 'ACC', faculty_id: f.data.id });
+  assert.equal(d.status, 201);
+  assert.equal((await admin.post('/admin/oversight', { user_id: student.user.id, scope: 'university' })).status, 400);
+  assert.equal((await admin.post('/admin/oversight', { user_id: ta.user.id, scope: 'faculty', scope_id: f.data.id })).status, 201);
+  assert.equal((await ta.get(`/oversight/faculty/${f.data.id}`)).status, 200);
+  await admin.del(`/admin/faculties/${f.data.id}`);
+  assert.equal((await ta.get(`/oversight/faculty/${f.data.id}`)).status, 403);
+  assert.equal((await doctor.get('/admin/faculties')).status, 403);
+});

@@ -1,5 +1,5 @@
-export const ROLE_LABELS = { admin: 'مسؤول النظام', doctor: 'عضو هيئة تدريس', ta: 'معيد', student: 'طالب' };
-export const ROLE_TITLES = { doctor: 'د.', ta: 'م.', student: '', admin: '' };
+export const ROLE_LABELS = { admin: 'مسؤول النظام', doctor: 'عضو هيئة تدريس', ta: 'معيد', student: 'طالب', leader: 'قيادات' };
+export const ROLE_TITLES = { doctor: 'د.', ta: 'م.', student: '', admin: '', leader: 'أ.د.' };
 export const LEVEL_LABELS = ['الإعدادية', 'الفرقة الأولى', 'الفرقة الثانية', 'الفرقة الثالثة', 'الفرقة الرابعة', 'الفرقة الخامسة'];
 export const SEMESTER_LABELS = { fall: 'الترم الأول', spring: 'الترم الثاني', summer: 'الترم الصيفي' };
 export const TYPE_LABELS = { sheet: 'شيت', quiz: 'كويز', midterm: 'ميدترم', lab: 'معمل', project: 'مشروع', final: 'فاينال', other: 'تقييم' };

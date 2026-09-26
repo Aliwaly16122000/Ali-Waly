@@ -4,7 +4,7 @@ import { z } from 'zod';
 import db from '../db.js';
 import { assertCurrentTerm } from '../lib/term.js';
 import { parse, badRequest, notFound, toId, HttpError } from '../lib/http.js';
-import { courseAccess, courseStudentIds, courseStaffIds } from '../lib/access.js';
+import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
 import { notify } from '../lib/notify.js';
 import { emitTo } from '../lib/realtime.js';
 import { nowIso } from '../lib/time.js';
@@ -97,7 +97,7 @@ function loadSession(req, allowed) {
 }
 
 router.get('/:id', (req, res) => {
-  const { s, course } = loadSession(req, ['doctor', 'ta']);
+  const { s, course } = loadSession(req, READERS);
   const students = db.prepare(`
     SELECT u.id, u.name, u.username, e.section, r.recorded_at, r.method, r.distance_m
     FROM enrollments e JOIN users u ON u.id = e.student_id

@@ -61,7 +61,7 @@ export default function Students({ course, onMessage }) {
                 <Td className="ltr text-right text-muted">{s.username}</Td>
                 <Td className="text-muted">{s.section || '—'}</Td>
                 <Td className="ltr text-right text-muted text-xs">{s.email || '—'}</Td>
-                <Td className="text-left">{course.my_role !== 'admin' && <Button size="sm" variant="soft" icon={MessageCircle} onClick={() => onMessage(s.id)}>مراسلة</Button>}</Td>
+                <Td className="text-left">{!['admin', 'observer'].includes(course.my_role) && <Button size="sm" variant="soft" icon={MessageCircle} onClick={() => onMessage(s.id)}>مراسلة</Button>}</Td>
               </tr>
             ))}
           </tbody>

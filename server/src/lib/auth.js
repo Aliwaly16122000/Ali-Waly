@@ -50,5 +50,9 @@ export const requireRole = (...roles) => (req, _res, next) => {
 
 export function publicUser(user) {
   const { password_hash, is_active, ...rest } = user;
-  return { ...rest, must_change_password: !!rest.must_change_password };
+  const scopes = db.prepare(`SELECT o.scope, o.scope_id, o.title,
+      CASE o.scope WHEN 'department' THEN d.name WHEN 'faculty' THEN f.name ELSE 'الجامعة' END AS name
+    FROM oversight o LEFT JOIN departments d ON o.scope = 'department' AND d.id = o.scope_id
+    LEFT JOIN faculties f ON o.scope = 'faculty' AND f.id = o.scope_id WHERE o.user_id = ?`).all(rest.id);
+  return { ...rest, must_change_password: !!rest.must_change_password, oversight: scopes };
 }

@@ -4,7 +4,7 @@ import db from '../db.js';
 import { ACCEPTING_SQL } from './assessments.js';
 import { isArchived, listTerms, termFilter, termInfo } from '../lib/term.js';
 import { ah, parse, notFound, forbidden, toId } from '../lib/http.js';
-import { courseAccess, courseStudentIds, courseStaffIds } from '../lib/access.js';
+import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
 import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
 import { notify } from '../lib/notify.js';
 
@@ -80,7 +80,7 @@ router.get('/:id', (req, res) => {
 
 router.get('/:id/students', (req, res) => {
   const id = toId(req.params.id);
-  courseAccess(req.user, id, ['doctor', 'ta']);
+  courseAccess(req.user, id, READERS);
   res.json(db.prepare(`
     SELECT u.id, u.name, u.username, u.email, u.level, e.section, d.name AS department_name
     FROM enrollments e JOIN users u ON u.id = e.student_id LEFT JOIN departments d ON d.id = u.department_id

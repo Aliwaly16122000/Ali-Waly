@@ -1,5 +1,5 @@
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { Megaphone, BookOpen, FileText, Award, CalendarCheck, BarChart3, Users, ChevronRight, MessageCircle, CalendarDays, Archive } from 'lucide-react';
+import { Megaphone, BookOpen, FileText, Award, CalendarCheck, BarChart3, Users, ChevronRight, MessageCircle, CalendarDays, Archive, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
@@ -26,7 +26,7 @@ export default function CourseDetail() {
   if (error) return <ErrorState error={error} onRetry={reload} />;
 
   const role = course.my_role;
-  const staff = role === 'doctor' || role === 'ta' || role === 'admin';
+  const staff = ['doctor', 'ta', 'admin', 'observer'].includes(role); // observers (leadership) get read-only staff views
   const tabs = [
     { id: 'assessments', label: 'الشيتات والتقييمات', icon: FileText },
     { id: 'announcements', label: 'الإعلانات', icon: Megaphone },
@@ -69,11 +69,11 @@ export default function CourseDetail() {
           )}
           <div className="flex flex-wrap gap-2 mt-5">
             {course.staff.map((s) => (
-              <button key={s.id} onClick={() => role !== 'admin' && message(s.id)} disabled={role === 'admin'}
+              <button key={s.id} onClick={() => !['admin', 'observer'].includes(role) && message(s.id)} disabled={['admin', 'observer'].includes(role)}
                 className="flex items-center gap-2 rounded-full bg-white/15 hover:bg-white/25 ps-1 pe-3 py-1 text-sm transition">
                 <Avatar name={s.name} size="sm" />
                 <span className="font-semibold">{titled(s)}</span>
-                {role !== 'admin' && <MessageCircle className="size-3.5 opacity-80" />}
+                {!['admin', 'observer'].includes(role) && <MessageCircle className="size-3.5 opacity-80" />}
               </button>
             ))}
           </div>
@@ -85,6 +85,7 @@ export default function CourseDetail() {
           تقدر تشوف كل الدرجات والملفات والحضور وتصدّرهم، لكن مفيش تسليمات جديدة ولا تسجيل حضور ولا تذكيرات.
         </Alert>
       )}
+      {role === 'observer' && <Alert tone="blue" icon={Eye} className="mb-4">وضع المتابعة: بتشوف الإحصائيات والدرجات والحضور من غير تعديل.</Alert>}
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div className="mt-6">
         {tab === 'assessments' && <Assessments course={course} />}

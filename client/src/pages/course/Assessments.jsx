@@ -68,7 +68,8 @@ export default function Assessments({ course }) {
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState('all');
   const navigate = useNavigate();
-  const staff = ['doctor', 'ta', 'admin'].includes(course.my_role);
+  const staff = ['doctor', 'ta', 'admin', 'observer'].includes(course.my_role);
+  const canEdit = ['doctor', 'ta', 'admin'].includes(course.my_role);
 
   if (loading && !data) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
@@ -86,7 +87,7 @@ export default function Assessments({ course }) {
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <Segmented options={filters} value={filter} onChange={setFilter} />
-        {staff && <Button icon={Plus} onClick={() => setCreating(true)}>تقييم جديد</Button>}
+        {canEdit && <Button icon={Plus} onClick={() => setCreating(true)}>تقييم جديد</Button>}
       </div>
       <Card className="overflow-hidden">
         {!list.length ? <EmptyState icon={FileText} title="لا توجد تقييمات" description={staff ? 'أضف أول شيت للمادة' : undefined} />
