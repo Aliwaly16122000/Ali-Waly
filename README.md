@@ -79,12 +79,13 @@ npm run dev       # الخادم على :4000 والواجهة على http://loc
 
 بدون `seed` بيتعمل حساب أدمن تلقائياً (`admin` / `admin123` أو من `ADMIN_USERNAME` / `ADMIN_PASSWORD`) ويُطلب تغيير كلمة السر أول دخول.
 
-### تجربة مجانية أونلاين (بدون أي أوامر)
+### تجربة مجانية أونلاين (بدون أي أوامر) — GitHub Codespaces
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Aliwaly16122000/Ali-Waly)
+1. افتح: https://codespaces.new/Aliwaly16122000/Ali-Waly ← تأكد إن الـ Branch فيه ملف `.devcontainer` ← **Create codespace**.
+2. استنى 5–7 دقايق لحد ما يظهر في الـ Terminal: `EngPortal running on http://localhost:4000`.
+3. من تبويب **PORTS** ← اضغط 🌐 جنب بورت `4000`. ولو عايز تفتحه من الموبايل: كليك يمين على البورت ← **Port Visibility ← Public** وانسخ اللينك.
 
-اضغط الزرار ← سجّل دخول بحساب GitHub ← اضغط **Deploy Blueprint**. بعد حوالي 5 دقايق هيطلعلك لينك `https://engportal-xxxx.onrender.com` يفتح على أي موبايل، وفيه البيانات التجريبية والحسابات اللي فوق.
-> الخطة المجانية بتنام بعد 15 دقيقة من غير استخدام (أول فتح بعدها بياخد حوالي دقيقة)، والبيانات التجريبية بترجع لأصلها مع كل إعادة تشغيل — مناسبة للتجربة، مش للاستخدام الفعلي.
+> مجاني حتى حوالي 60 ساعة في الشهر ومن غير فيزا، بس بيشتغل وهو مفتوح بس ويقف لوحده بعد 30 دقيقة من غير استخدام — للتجربة والعرض، مش للاستخدام الفعلي مع الطلاب.
 
 ### النشر (Production)
 
