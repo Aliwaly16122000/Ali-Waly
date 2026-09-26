@@ -22,6 +22,7 @@ const AdminUsers = lazy(() => import('./pages/admin/Users'));
 const AdminCourses = lazy(() => import('./pages/admin/Courses'));
 const AdminCourseManage = lazy(() => import('./pages/admin/CourseManage'));
 const AdminBroadcast = lazy(() => import('./pages/admin/Broadcast'));
+const AdminSystem = lazy(() => import('./pages/admin/System'));
 const MySchedule = lazy(() => import('./pages/MySchedule'));
 const StartSlotAttendance = lazy(() => import('./pages/StartSlotAttendance'));
 
@@ -64,6 +65,7 @@ function AppRoutes() {
             <Route path="notifications" element={<Notifications />} />
             <Route path="schedule" element={<Protected roles={['student', 'ta', 'doctor']}><MySchedule /></Protected>} />
             <Route path="schedule/:id/attend" element={<Protected roles={['ta', 'doctor', 'admin']}><StartSlotAttendance /></Protected>} />
+            <Route path="admin/system" element={<Protected roles={['admin']}><AdminSystem /></Protected>} />
             <Route path="admin/broadcast" element={<Protected roles={['admin']}><AdminBroadcast /></Protected>} />
             <Route path="profile" element={<Profile />} />
             <Route path="admin/departments" element={<Protected roles={['admin']}><AdminDepartments /></Protected>} />

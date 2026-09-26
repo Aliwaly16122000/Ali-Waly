@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
+import { ACCEPTING_SQL } from './assessments.js';
+import { currentTerm, isArchived, listTerms, termFilter } from '../lib/term.js';
 import { ah, parse, notFound, forbidden, toId } from '../lib/http.js';
 import { courseAccess, courseStudentIds, courseStaffIds } from '../lib/access.js';
 import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
@@ -19,21 +21,29 @@ const hydrate = (c) => ({ ...c, staff: JSON.parse(c.staff || '[]') });
 /** Courses relevant to the current user: enrolled (student), assigned (staff) or all (admin). */
 router.get('/', (req, res) => {
   const { user } = req;
+  // ?term=current (default) | all | 2026/2027-fall
+  const t = req.query.term || 'current';
+  let tf = { sql: '1 = 1', params: [] };
+  if (t === 'current') tf = termFilter();
+  else if (t !== 'all') {
+    const [year, semester] = String(t).split('-');
+    tf = { sql: 'c.academic_year = ? AND c.semester = ?', params: [year, semester] };
+  }
   let rows;
   if (user.role === 'admin') {
     rows = db.prepare(`SELECT ${COURSE_COLUMNS}, 'admin' AS my_role FROM courses c
-      LEFT JOIN departments d ON d.id = c.department_id ORDER BY c.academic_year DESC, c.code`).all();
+      LEFT JOIN departments d ON d.id = c.department_id WHERE ${tf.sql} ORDER BY c.academic_year DESC, c.code`).all(...tf.params);
   } else if (user.role === 'student') {
     rows = db.prepare(`
       SELECT ${COURSE_COLUMNS}, 'student' AS my_role, e.section,
-        (SELECT COUNT(*) FROM assessments a WHERE a.course_id = c.id AND a.status = 'open' AND a.accepts_submissions = 1
+        (SELECT COUNT(*) FROM assessments a WHERE a.course_id = c.id AND ${ACCEPTING_SQL}
            AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.assessment_id = a.id AND s.student_id = e.student_id
                            AND (s.submitted_at IS NOT NULL OR s.score IS NOT NULL))) AS pending_count,
         (SELECT SUM(s.score) FROM submissions s JOIN assessments a ON a.id = s.assessment_id
            WHERE a.course_id = c.id AND a.status = 'published' AND s.student_id = e.student_id) AS my_total,
         (SELECT SUM(a.max_score) FROM assessments a WHERE a.course_id = c.id AND a.status = 'published') AS published_max
       FROM enrollments e JOIN courses c ON c.id = e.course_id LEFT JOIN departments d ON d.id = c.department_id
-      WHERE e.student_id = ? ORDER BY c.academic_year DESC, c.code`).all(user.id);
+      WHERE e.student_id = ? AND ${tf.sql} ORDER BY c.academic_year DESC, c.code`).all(user.id, ...tf.params);
   } else {
     rows = db.prepare(`
       SELECT ${COURSE_COLUMNS}, cs.role AS my_role,
@@ -41,16 +51,21 @@ router.get('/', (req, res) => {
            WHERE a.course_id = c.id AND a.status = 'open' AND s.submitted_at IS NOT NULL AND s.score IS NULL) AS to_grade_count,
         (SELECT COUNT(*) FROM assessments a WHERE a.course_id = c.id AND a.status = 'submitted') AS awaiting_approval_count
       FROM course_staff cs JOIN courses c ON c.id = cs.course_id LEFT JOIN departments d ON d.id = c.department_id
-      WHERE cs.user_id = ? ORDER BY c.academic_year DESC, c.code`).all(user.id);
+      WHERE cs.user_id = ? AND ${tf.sql} ORDER BY c.academic_year DESC, c.code`).all(user.id, ...tf.params);
   }
-  res.json(rows.map(hydrate));
+  res.json(rows.map((c) => ({ ...hydrate(c), archived: isArchived(c) })));
+});
+
+/** Current term + the terms this user has courses in (for the archive switcher). */
+router.get('/terms', (req, res) => {
+  res.json({ current: currentTerm(), terms: listTerms() });
 });
 
 router.get('/:id', (req, res) => {
   const id = toId(req.params.id);
   const { role } = courseAccess(req.user, id);
   const course = db.prepare(`SELECT ${COURSE_COLUMNS} FROM courses c LEFT JOIN departments d ON d.id = c.department_id WHERE c.id = ?`).get(id);
-  res.json({ ...hydrate(course), my_role: role });
+  res.json({ ...hydrate(course), my_role: role, archived: isArchived(course) });
 });
 
 router.get('/:id/students', (req, res) => {
@@ -60,6 +75,22 @@ router.get('/:id/students', (req, res) => {
     SELECT u.id, u.name, u.username, u.email, u.level, e.section, d.name AS department_name
     FROM enrollments e JOIN users u ON u.id = e.student_id LEFT JOIN departments d ON d.id = u.department_id
     WHERE e.course_id = ? ORDER BY u.name`).all(id));
+});
+
+/** Attendance options per course: optional geofence around the lecture hall. */
+router.put('/:id/attendance-settings', (req, res) => {
+  const id = toId(req.params.id);
+  courseAccess(req.user, id, ['doctor', 'ta']);
+  const g = parse(z.object({
+    geo_enabled: z.boolean(),
+    geo_lat: z.number().min(-90).max(90).nullish(),
+    geo_lng: z.number().min(-180).max(180).nullish(),
+    geo_radius: z.number().int().min(30).max(5000).default(300),
+    geo_label: z.string().trim().max(100).nullish(),
+  }).refine((v) => !v.geo_enabled || (v.geo_lat != null && v.geo_lng != null), 'حدد موقع المدرج أولاً'), req.body);
+  db.prepare('UPDATE courses SET geo_enabled = ?, geo_lat = ?, geo_lng = ?, geo_radius = ?, geo_label = ? WHERE id = ?')
+    .run(Number(g.geo_enabled), g.geo_lat ?? null, g.geo_lng ?? null, g.geo_radius, g.geo_label || null, id);
+  res.json({ ok: true });
 });
 
 // ───────────── Posts: announcements & lecture materials ─────────────

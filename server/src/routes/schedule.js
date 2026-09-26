@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
+import { assertCurrentTerm, termFilter } from '../lib/term.js';
 import { parse, badRequest, notFound, toId } from '../lib/http.js';
 import { courseAccess } from '../lib/access.js';
 import { localNow, toMinutes } from '../lib/clock.js';
@@ -86,12 +87,13 @@ router.delete('/:id', (req, res) => {
 /** The current user's weekly timetable across all their courses. */
 router.get('/me', (req, res) => {
   const { user } = req;
+  const tf = termFilter();
   let rows;
   if (user.role === 'student') {
     rows = db.prepare(`
       SELECT ${SLOT_COLUMNS} FROM enrollments e JOIN course_schedule s ON s.course_id = e.course_id
       JOIN courses c ON c.id = s.course_id LEFT JOIN users u ON u.id = s.staff_id
-      WHERE e.student_id = ? AND (s.section IS NULL OR s.section = e.section)`).all(user.id);
+      WHERE e.student_id = ? AND (s.section IS NULL OR s.section = e.section) AND ${tf.sql}`).all(user.id, ...tf.params);
   } else if (user.role === 'admin') {
     rows = [];
   } else {
@@ -100,7 +102,7 @@ router.get('/me', (req, res) => {
       SELECT ${SLOT_COLUMNS} FROM course_staff cs JOIN course_schedule s ON s.course_id = cs.course_id
       JOIN courses c ON c.id = s.course_id LEFT JOIN users u ON u.id = s.staff_id
       WHERE cs.user_id = ? AND (s.staff_id = cs.user_id OR (s.staff_id IS NULL AND
-        ((cs.role = 'doctor' AND s.kind = 'lecture') OR (cs.role = 'ta' AND s.kind != 'lecture'))))`).all(user.id);
+        ((cs.role = 'doctor' AND s.kind = 'lecture') OR (cs.role = 'ta' AND s.kind != 'lecture')))) AND ${tf.sql}`).all(user.id, ...tf.params);
   }
   const now = localNow();
   rows.sort((a, b) => ((a.day_of_week + 1) % 7) - ((b.day_of_week + 1) % 7) || a.start_time.localeCompare(b.start_time));
@@ -117,6 +119,7 @@ router.get('/me', (req, res) => {
  */
 router.post('/:id/start-attendance', (req, res) => {
   const { slot, course } = loadSlot(req);
+  assertCurrentTerm(course);
   const existing = db.prepare(`
     SELECT id FROM attendance_sessions WHERE schedule_id = ? AND closed_at IS NULL AND closes_at > ? ORDER BY id DESC LIMIT 1`)
     .get(slot.id, new Date().toISOString());

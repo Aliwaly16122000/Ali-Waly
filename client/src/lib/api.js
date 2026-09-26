@@ -1,7 +1,8 @@
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data) {
     super(message);
     this.status = status;
+    this.data = data || {}; // extra fields from the server (e.g. { code, ticket })
   }
 }
 
@@ -25,7 +26,7 @@ async function request(method, url, body) {
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   if (!res.ok) {
     if (res.status === 401 && !url.startsWith('/auth/')) onUnauthorized();
-    throw new ApiError(res.status, data?.error || 'حدث خطأ غير متوقع');
+    throw new ApiError(res.status, data?.error || 'حدث خطأ غير متوقع', data);
   }
   return data;
 }

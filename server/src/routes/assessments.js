@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
+import { assertCurrentTerm } from '../lib/term.js';
 import { ah, parse, badRequest, forbidden, notFound, toId } from '../lib/http.js';
 import { courseAccess, courseStudentIds, courseStaffIds } from '../lib/access.js';
 import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
@@ -31,7 +32,7 @@ courseAssessments.get('/', (req, res) => {
 
   if (role === 'student') {
     const rows = db.prepare(`
-      SELECT a.id, a.course_id, a.title, a.type, a.description, a.max_score, a.due_at, a.accepts_submissions,
+      SELECT a.id, a.course_id, a.title, a.type, a.description, a.max_score, a.due_at, a.accepts_submissions, a.late_policy, a.grace_hours,
              a.attachment_name, a.status, a.created_at, a.published_at,
              s.id AS submission_id, s.file_name, s.submitted_at, s.note,
              CASE WHEN a.status = 'published' THEN s.score END AS score,
@@ -60,20 +61,35 @@ const assessmentSchema = z.object({
   max_score: z.coerce.number().positive('الدرجة العظمى يجب أن تكون أكبر من صفر').max(1000),
   due_at: z.string().datetime({ offset: true }).optional().or(z.literal('')),
   accepts_submissions: z.preprocess((v) => v === true || v === 'true' || v === '1' || v === 1, z.boolean()).default(true),
+  // allow: late work accepted and flagged · closed: rejected after the deadline · grace: accepted for grace_hours more
+  late_policy: z.enum(['allow', 'closed', 'grace']).default('allow'),
+  grace_hours: z.coerce.number().int().min(0).max(24 * 14).default(0),
 });
+
+/** SQL predicate (alias `a`): the assessment still accepts submissions right now. */
+export const ACCEPTING_SQL = `(a.status = 'open' AND a.accepts_submissions = 1 AND (a.due_at IS NULL OR a.late_policy = 'allow'
+  OR datetime(a.due_at, '+' || CASE WHEN a.late_policy = 'grace' THEN a.grace_hours ELSE 0 END || ' hours') > datetime('now')))`;
+
+/** Latest moment a submission is accepted, or null when there is no limit. */
+export function submissionDeadline(a) {
+  if (!a.due_at || a.late_policy === 'allow') return null;
+  const due = new Date(a.due_at).getTime();
+  return new Date(a.late_policy === 'grace' ? due + a.grace_hours * 3600_000 : due);
+}
 
 courseAssessments.post('/', upload.single('attachment'), (req, res) => {
   const courseId = toId(req.params.courseId);
   const { a, course } = withUploadCleanup(req, () => {
     const { course } = courseAccess(req.user, courseId, ['doctor', 'ta']);
+    assertCurrentTerm(course);
     return { a: parse(assessmentSchema, req.body), course };
   });
   const dueAt = a.due_at ? new Date(a.due_at).toISOString() : null;
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO assessments (course_id, title, type, description, max_score, due_at, accepts_submissions,
-                             attachment_path, attachment_name, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(courseId, a.title, a.type, a.description || null, a.max_score, dueAt,
-    Number(a.accepts_submissions), storedName(req.file), req.file?.originalname ?? null, req.user.id);
+                             attachment_path, attachment_name, created_by, late_policy, grace_hours)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(courseId, a.title, a.type, a.description || null, a.max_score, dueAt,
+    Number(a.accepts_submissions), storedName(req.file), req.file?.originalname ?? null, req.user.id, a.late_policy, a.grace_hours);
   const id = Number(lastInsertRowid);
 
   const due = dueAt ? ` - التسليم حتى ${new Date(dueAt).toLocaleString('ar-EG-u-nu-latn', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' })}` : '';
@@ -130,9 +146,11 @@ router.put('/:id', upload.single('attachment'), (req, res) => {
   const dueAt = data.due_at ? new Date(data.due_at).toISOString() : null;
   db.prepare(`
     UPDATE assessments SET title = ?, type = ?, description = ?, max_score = ?, due_at = ?, accepts_submissions = ?,
-      attachment_path = COALESCE(?, attachment_path), attachment_name = COALESCE(?, attachment_name)
+      attachment_path = COALESCE(?, attachment_path), attachment_name = COALESCE(?, attachment_name),
+      late_policy = ?, grace_hours = ?, reminded_at = CASE WHEN due_at IS ? THEN reminded_at ELSE NULL END
     WHERE id = ?`).run(data.title, data.type, data.description || null, data.max_score, dueAt,
-    Number(data.accepts_submissions), storedName(req.file), req.file?.originalname ?? null, current.id);
+    Number(data.accepts_submissions), storedName(req.file), req.file?.originalname ?? null,
+    data.late_policy, data.grace_hours, dueAt, current.id);
   if (req.file) removeUpload(current.attachment_path);
   res.json({ ok: true });
 });
@@ -155,8 +173,11 @@ router.get('/:id/attachment', (req, res) => {
 router.post('/:id/submit', upload.single('file'), (req, res) => {
   const { a, course, note } = withUploadCleanup(req, () => {
     const { a, course } = loadAssessment(req, ['student']);
+    assertCurrentTerm(course);
     if (!a.accepts_submissions) throw badRequest('هذا التقييم لا يستقبل تسليمات إلكترونية');
     if (a.status !== 'open') throw badRequest('انتهى التسليم لهذا التقييم');
+    const deadline = submissionDeadline(a);
+    if (deadline && new Date() > deadline) throw badRequest('انتهى موعد التسليم ولم يعد مسموحاً بالتسليم');
     if (!req.file) throw badRequest('يجب إرفاق ملف الحل');
     const existing = db.prepare('SELECT score FROM submissions WHERE assessment_id = ? AND student_id = ?').get(a.id, req.user.id);
     if (existing && existing.score !== null) throw badRequest('تم تصحيح تسليمك بالفعل ولا يمكن تعديله');
@@ -198,15 +219,32 @@ submissionsRouter.get('/:id/file', (req, res) => {
  * Saves scores for one or more students. TAs may grade only while the assessment is
  * open; doctors can adjust grades at any stage.
  */
+const logEvent = db.prepare(`
+  INSERT INTO grade_history (assessment_id, student_id, action, old_score, new_score, old_feedback, new_feedback, reason, changed_by, changed_at)
+  VALUES (@assessment_id, @student_id, @action, @old_score, @new_score, @old_feedback, @new_feedback, @reason, @changed_by, @changed_at)`);
+
+function logStatus(a, action, userId, reason = null) {
+  logEvent.run({
+    assessment_id: a.id, student_id: null, action, old_score: null, new_score: null, old_feedback: null, new_feedback: null,
+    reason, changed_by: userId, changed_at: nowIso(),
+  });
+}
+
+/**
+ * Saves scores for one or more students. TAs may grade only while the assessment is
+ * open; doctors can adjust grades at any stage, but changing an already-published grade
+ * needs a reason and tells the student. Every change is written to grade_history.
+ */
 router.put('/:id/grades', (req, res) => {
-  const { a, role } = loadAssessment(req, ['doctor', 'ta']);
+  const { a, course, role } = loadAssessment(req, ['doctor', 'ta']);
   if (role === 'ta' && a.status !== 'open') throw forbidden('تم رفع الدرجات للدكتور، لا يمكن التعديل إلا بعد إرجاعها');
-  const { grades } = parse(z.object({
+  const { grades, reason } = parse(z.object({
     grades: z.array(z.object({
       student_id: z.number().int().positive(),
       score: z.number().min(0).nullable(),
       feedback: z.string().trim().max(5000).nullish(),
     })).min(1),
+    reason: z.string().trim().max(500).optional(),
   }), req.body);
 
   const enrolled = new Set(courseStudentIds(a.course_id));
@@ -214,17 +252,62 @@ router.put('/:id/grades', (req, res) => {
     if (!enrolled.has(g.student_id)) throw badRequest('طالب غير مسجل في المادة');
     if (g.score !== null && g.score > a.max_score) throw badRequest(`الدرجة لا يمكن أن تتجاوز ${a.max_score}`);
   }
+
+  const current = new Map(db.prepare('SELECT student_id, score, feedback FROM submissions WHERE assessment_id = ?')
+    .all(a.id).map((r) => [r.student_id, r]));
+  const changes = grades
+    .map((g) => {
+      const before = current.get(g.student_id);
+      const oldScore = before?.score ?? null;
+      const oldFeedback = before?.feedback ?? null;
+      const newFeedback = g.feedback || null;
+      return { ...g, feedback: newFeedback, oldScore, oldFeedback, scoreChanged: oldScore !== g.score, changed: oldScore !== g.score || oldFeedback !== newFeedback };
+    })
+    .filter((g) => g.changed);
+
+  const published = a.status === 'published';
+  if (published && changes.some((c) => c.scoreChanged) && !reason) {
+    throw badRequest('الدرجات منشورة للطلاب — اكتب سبب التعديل');
+  }
+
   const upsert = db.prepare(`
     INSERT INTO submissions (assessment_id, student_id, score, feedback, graded_by, graded_at)
     VALUES (@assessment_id, @student_id, @score, @feedback, @graded_by, @graded_at)
     ON CONFLICT (assessment_id, student_id) DO UPDATE SET
       score = excluded.score, feedback = excluded.feedback, graded_by = excluded.graded_by, graded_at = excluded.graded_at`);
   const now = nowIso();
-  db.transaction(() => grades.forEach((g) => upsert.run({
-    assessment_id: a.id, student_id: g.student_id, score: g.score, feedback: g.feedback || null,
-    graded_by: g.score === null ? null : req.user.id, graded_at: g.score === null ? null : now,
-  })))();
-  res.json({ ok: true, saved: grades.length });
+  db.transaction(() => changes.forEach((g) => {
+    upsert.run({
+      assessment_id: a.id, student_id: g.student_id, score: g.score, feedback: g.feedback,
+      graded_by: g.score === null ? null : req.user.id, graded_at: g.score === null ? null : now,
+    });
+    logEvent.run({
+      assessment_id: a.id, student_id: g.student_id, action: 'grade', old_score: g.oldScore, new_score: g.score,
+      old_feedback: g.oldFeedback, new_feedback: g.feedback, reason: reason || null, changed_by: req.user.id, changed_at: now,
+    });
+  }))();
+
+  if (published) {
+    for (const c of changes.filter((x) => x.scoreChanged)) {
+      notify(c.student_id, {
+        type: 'grades_published', title: `تم تعديل درجتك في ${a.title}`,
+        body: `${course.name}: ${c.oldScore ?? '—'} ← ${c.score ?? '—'}${reason ? ` · ${reason}` : ''}`,
+        link: `/courses/${a.course_id}/assessments/${a.id}`,
+      });
+    }
+  }
+  res.json({ ok: true, saved: changes.length });
+});
+
+/** Audit trail for an assessment (optionally one student). */
+router.get('/:id/history', (req, res) => {
+  const { a } = loadAssessment(req, ['doctor', 'ta']);
+  const studentId = req.query.student_id ? toId(req.query.student_id) : null;
+  res.json(db.prepare(`
+    SELECT h.*, u.name AS changed_by_name, u.role AS changed_by_role, st.name AS student_name, st.username AS student_username
+    FROM grade_history h LEFT JOIN users u ON u.id = h.changed_by LEFT JOIN users st ON st.id = h.student_id
+    WHERE h.assessment_id = ? ${studentId ? 'AND (h.student_id = ? OR h.student_id IS NULL)' : ''}
+    ORDER BY h.id DESC LIMIT 1000`).all(...(studentId ? [a.id, studentId] : [a.id])));
 });
 
 /** TA finishes grading and hands the sheet to the course doctor(s). */
@@ -235,6 +318,7 @@ router.post('/:id/submit-to-doctor', (req, res) => {
   if (!graded) throw badRequest('لم يتم رصد أي درجات بعد');
   db.prepare("UPDATE assessments SET status = 'submitted', submitted_by = ?, submitted_at = ?, review_note = NULL WHERE id = ?")
     .run(req.user.id, nowIso(), a.id);
+  logStatus(a, 'submit', req.user.id);
   notify(courseStaffIds(a.course_id, 'doctor').filter((id) => id !== req.user.id), {
     type: 'grades_submitted',
     title: `درجات بانتظار اعتمادك - ${course.name}`,
@@ -249,6 +333,7 @@ router.post('/:id/publish', (req, res) => {
   const { a, course } = loadAssessment(req, ['doctor']);
   if (a.status === 'published') throw badRequest('الدرجات منشورة بالفعل');
   db.prepare("UPDATE assessments SET status = 'published', published_at = ? WHERE id = ?").run(nowIso(), a.id);
+  logStatus(a, 'publish', req.user.id);
   notify(courseStudentIds(a.course_id), {
     type: 'grades_published',
     title: `نزلت درجات ${a.title}`,
@@ -268,6 +353,7 @@ router.post('/:id/return', (req, res) => {
   const { note } = parse(z.object({ note: z.string().trim().max(2000).optional() }), req.body);
   if (a.status === 'open') throw badRequest('التقييم مفتوح بالفعل');
   db.prepare("UPDATE assessments SET status = 'open', review_note = ?, published_at = NULL WHERE id = ?").run(note || null, a.id);
+  logStatus(a, 'return', req.user.id, note || null);
   notify(courseStaffIds(a.course_id, 'ta'), {
     type: 'grades_returned',
     title: `تمت إعادة درجات ${a.title} للمراجعة`,

@@ -1,11 +1,11 @@
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { Megaphone, BookOpen, FileText, Award, CalendarCheck, BarChart3, Users, ChevronRight, MessageCircle, CalendarDays } from 'lucide-react';
+import { Megaphone, BookOpen, FileText, Award, CalendarCheck, BarChart3, Users, ChevronRight, MessageCircle, CalendarDays, Archive } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
 import { LEVEL_LABELS, SEMESTER_LABELS, titled } from '../lib/format';
 import { openConversation } from '../lib/chat';
-import { ErrorState, PageLoader, Tabs, Avatar } from '../components/ui';
+import { Alert, ErrorState, PageLoader, Tabs, Avatar } from '../components/ui';
 import { courseGradient } from './Courses';
 import Posts from './course/Posts';
 import Assessments from './course/Assessments';
@@ -74,6 +74,11 @@ export default function CourseDetail() {
         </div>
       </div>
 
+      {course.archived && (
+        <Alert tone="amber" icon={Archive} className="mb-4" title="مادة من ترم سابق (أرشيف)">
+          تقدر تشوف كل الدرجات والملفات والحضور وتصدّرهم، لكن مفيش تسليمات جديدة ولا تسجيل حضور ولا تذكيرات.
+        </Alert>
+      )}
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div className="mt-6">
         {tab === 'assessments' && <Assessments course={course} />}

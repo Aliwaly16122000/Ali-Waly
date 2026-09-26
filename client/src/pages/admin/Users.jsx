@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Upload, Search, KeyRound, Pencil, Trash2, Download, Copy, UserX } from 'lucide-react';
+import { Plus, Upload, Search, KeyRound, Pencil, Trash2, Download, Copy, UserX, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, toForm } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
@@ -146,6 +146,7 @@ export default function Users() {
   const [creds, setCreds] = useState(null);
   const [del, setDel] = useState(null);
   const [reset, setReset] = useState(null);
+  const [unbind, setUnbind] = useState(null);
 
   const list = useMemo(() => (data || []).filter((u) => !q || u.name.includes(q) || u.username.toLowerCase().includes(q.toLowerCase())), [data, q]);
 
@@ -196,7 +197,7 @@ export default function Users() {
         </div>
         {loading && !data ? <PageLoader /> : error ? <ErrorState error={error} onRetry={reload} /> : !list.length ? <EmptyState title="لا يوجد مستخدمون" /> : (
           <Table>
-            <thead><tr><Th>الاسم</Th><Th>اسم المستخدم</Th><Th>القسم</Th>{role === 'student' && <Th>الفرقة</Th>}<Th>آخر دخول</Th><Th /></tr></thead>
+            <thead><tr><Th>الاسم</Th><Th>اسم المستخدم</Th><Th>القسم</Th>{role === 'student' && <Th>الفرقة</Th>}{role === 'student' && <Th>موبايل الحضور</Th>}<Th>آخر دخول</Th><Th /></tr></thead>
             <tbody>
               {list.map((u) => (
                 <tr key={u.id} className="hover:bg-surface-2">
@@ -212,6 +213,16 @@ export default function Users() {
                   <Td className="ltr text-right">{u.username}</Td>
                   <Td className="text-muted">{u.department_name || '—'}</Td>
                   {role === 'student' && <Td className="text-muted whitespace-nowrap">{LEVEL_LABELS[u.level] ?? '—'}</Td>}
+                  {role === 'student' && (
+                    <Td className="whitespace-nowrap">
+                      {u.device_bound_at ? (
+                        <div className="flex items-center gap-2">
+                          <Badge tone="green"><Smartphone className="size-3" /> {u.device_label || 'مربوط'}</Badge>
+                          <button className="text-xs text-rose-600 font-semibold hover:underline" onClick={() => setUnbind(u)}>فك الربط</button>
+                        </div>
+                      ) : <span className="text-xs text-muted">لم يُربط بعد</span>}
+                    </Td>
+                  )}
                   <Td className="text-muted text-xs whitespace-nowrap">{u.last_login_at ? timeAgo(u.last_login_at) : 'لم يدخل بعد'}</Td>
                   <Td>
                     <div className="flex justify-end gap-1">
@@ -233,6 +244,9 @@ export default function Users() {
       <CredentialsModal creds={creds} onClose={() => setCreds(null)} />
       <ConfirmModal open={!!reset} onClose={() => setReset(null)} onConfirm={doReset} tone="primary" title="إعادة تعيين كلمة السر"
         message={`هيتم توليد كلمة سر جديدة لـ ${reset?.name} والقديمة هتتوقف.`} confirmLabel="توليد كلمة سر" />
+      <ConfirmModal open={!!unbind} onClose={() => setUnbind(null)} tone="primary" title="فك ربط موبايل الحضور" confirmLabel="فك الربط"
+        onConfirm={async () => { await api.del(`/admin/users/${unbind.id}/device`); toast.success('تم — أول تسجيل حضور جاي هيربط الموبايل الجديد'); setUnbind(null); reload(true); }}
+        message={`استخدمه لو ${unbind?.name} غيّر موبايله أو ضاع. أول مرة يسجل حضور بعد كده هيتربط الموبايل الجديد.`} />
       <ConfirmModal open={!!del} onClose={() => setDel(null)} onConfirm={doDelete} title="حذف المستخدم"
         message={`حذف ${del?.name} نهائياً مع كل تسليماته ودرجاته؟ لو عايز توقفه مؤقتاً استخدم "تعديل" وألغِ تفعيل الحساب.`} confirmLabel="حذف نهائياً" />
     </>

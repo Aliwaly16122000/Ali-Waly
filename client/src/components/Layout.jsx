@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, QrCode, MessagesSquare, Bell, Building2, Users, Library, LogOut,
-  Moon, Sun, Menu, X, GraduationCap, UserCog, CheckCheck, CalendarDays, Megaphone,
+  Moon, Sun, Menu, X, GraduationCap, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useRealtime } from '../context/RealtimeContext';
@@ -19,6 +19,7 @@ function navFor(role) {
       { to: '/admin/users', label: 'المستخدمون', icon: Users },
       { to: '/admin/courses', label: 'المواد والتسجيل', icon: Library },
       { to: '/admin/broadcast', label: 'إعلانات الكلية', icon: Megaphone },
+      { to: '/admin/system', label: 'الترم والنسخ الاحتياطي', icon: DatabaseBackup },
       { to: '/courses', label: 'استعراض المواد', icon: BookOpen },
     ];
   }

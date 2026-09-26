@@ -4,7 +4,7 @@ import { BookOpen, Users, Search, FileText, ClipboardCheck, Inbox } from 'lucide
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../lib/useApi';
 import { LEVEL_LABELS, SEMESTER_LABELS, num, pctTone, titled } from '../lib/format';
-import { Badge, Card, EmptyState, ErrorState, Input, PageHeader, PageLoader, Progress } from '../components/ui';
+import { Badge, Card, EmptyState, ErrorState, Input, PageHeader, PageLoader, Progress, Select } from '../components/ui';
 
 const GRADIENTS = [
   'from-brand-500 to-brand-700', 'from-violet-500 to-fuchsia-600', 'from-emerald-500 to-teal-600',
@@ -26,6 +26,7 @@ function CourseCard({ c, role }) {
           </svg>
           <div className="relative flex items-start justify-between gap-2">
             <span className="text-xs font-bold bg-white/20 rounded-lg px-2 py-1 ltr">{c.code}</span>
+            {c.archived && <span className="text-xs font-bold bg-black/25 rounded-lg px-2 py-1">أرشيف · {SEMESTER_LABELS[c.semester]} {c.academic_year}</span>}
             {c.my_role && c.my_role !== 'student' && c.my_role !== 'admin' && (
               <span className="text-xs font-bold bg-white/20 rounded-lg px-2 py-1">{c.my_role === 'doctor' ? 'دكتور المادة' : 'معيد'}</span>
             )}
@@ -65,25 +66,39 @@ function CourseCard({ c, role }) {
 
 export default function Courses() {
   const { user } = useAuth();
-  const { data, error, loading, reload } = useApi('/courses');
+  const [term, setTerm] = useState('current');
+  const { data, error, loading, reload } = useApi(`/courses?term=${encodeURIComponent(term)}`);
+  const { data: terms } = useApi('/courses/terms');
   const [q, setQ] = useState('');
   const filtered = useMemo(() => (data || []).filter((c) => !q || c.name.includes(q) || c.code.toLowerCase().includes(q.toLowerCase())), [data, q]);
 
   if (loading && !data) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
-  const term = data[0] ? `${SEMESTER_LABELS[data[0].semester]} ${data[0].academic_year}` : '';
+  const cur = terms?.current;
+  const termLabel = (t) => `${SEMESTER_LABELS[t.semester]} ${t.academic_year}`;
 
   return (
     <>
       <PageHeader
         title={user.role === 'admin' ? 'كل المواد' : 'موادي'}
-        subtitle={term}
-        actions={data.length > 6 && (
-          <div className="relative w-64">
-            <Search className="size-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
-            <Input className="pr-9" placeholder="ابحث باسم أو كود المادة" value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-        )}
+        subtitle={term === 'current' && cur ? termLabel(cur) : term === 'all' ? 'كل الترمات' : 'أرشيف'}
+        actions={<>
+          {terms?.terms?.length > 1 && (
+            <Select className="w-52" value={term} onChange={(e) => setTerm(e.target.value)} aria-label="الترم">
+              <option value="current">الترم الحالي{cur ? ` (${termLabel(cur)})` : ''}</option>
+              {terms.terms.filter((t) => !cur || t.academic_year !== cur.academic_year || t.semester !== cur.semester).map((t) => (
+                <option key={`${t.academic_year}-${t.semester}`} value={`${t.academic_year}-${t.semester}`}>أرشيف: {termLabel(t)}</option>
+              ))}
+              <option value="all">كل الترمات</option>
+            </Select>
+          )}
+          {data.length > 6 && (
+            <div className="relative w-64">
+              <Search className="size-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
+              <Input className="pr-9" placeholder="ابحث باسم أو كود المادة" value={q} onChange={(e) => setQ(e.target.value)} />
+            </div>
+          )}
+        </>}
       />
       {!data.length ? (
         <Card><EmptyState icon={BookOpen} title="لا توجد مواد" description={user.role === 'student' ? 'لم يتم تسجيلك في أي مادة بعد. تواصل مع شؤون الطلاب.' : 'لم يتم إسناد أي مادة لك بعد.'} /></Card>

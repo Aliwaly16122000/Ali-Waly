@@ -79,7 +79,7 @@ app.use((err, _req, res, _next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'بيانات غير صالحة' });
   const status = err.status || 500;
   if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 ? 'حدث خطأ غير متوقع في الخادم' : err.message });
+  res.status(status).json({ ...(status < 500 && err.extra), error: status >= 500 ? 'حدث خطأ غير متوقع في الخادم' : err.message });
 });
 
 ensureAdmin();

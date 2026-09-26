@@ -206,6 +206,30 @@ CREATE TABLE IF NOT EXISTS schedule_events (
   PRIMARY KEY (slot_id, date, kind)
 );
 
+-- Every grade change and workflow step, so disputes can be traced ("who changed my grade?").
+CREATE TABLE IF NOT EXISTS grade_history (
+  id            INTEGER PRIMARY KEY,
+  assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  student_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  action        TEXT NOT NULL CHECK (action IN ('grade','submit','publish','return')),
+  old_score     REAL,
+  new_score     REAL,
+  old_feedback  TEXT,
+  new_feedback  TEXT,
+  reason        TEXT,
+  changed_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  changed_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_grade_history ON grade_history(assessment_id, student_id);
+
+-- The one phone a student may record attendance from.
+CREATE TABLE IF NOT EXISTS student_devices (
+  user_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  label     TEXT,
+  bound_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -224,6 +248,17 @@ function addColumn(table, column, definition) {
 addColumn('courses', 'grading_scheme', 'TEXT');
 addColumn('assessments', 'reminded_at', 'TEXT');
 addColumn('attendance_sessions', 'warnings_sent_at', 'TEXT');
+addColumn('attendance_records', 'device_id', 'TEXT');
+addColumn('attendance_records', 'latitude', 'REAL');
+addColumn('attendance_records', 'longitude', 'REAL');
+addColumn('attendance_records', 'distance_m', 'REAL');
+addColumn('courses', 'geo_enabled', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('courses', 'geo_lat', 'REAL');
+addColumn('courses', 'geo_lng', 'REAL');
+addColumn('courses', 'geo_radius', 'INTEGER NOT NULL DEFAULT 300');
+addColumn('courses', 'geo_label', 'TEXT');
+addColumn('assessments', 'late_policy', "TEXT NOT NULL DEFAULT 'allow'");
+addColumn('assessments', 'grace_hours', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('attendance_sessions', 'schedule_id', 'INTEGER REFERENCES course_schedule(id) ON DELETE SET NULL');
 
 export function getSetting(key, factory) {
@@ -233,6 +268,10 @@ export function getSetting(key, factory) {
   const value = factory();
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value);
   return value;
+}
+
+export function setSetting(key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 
 export const JWT_SECRET = process.env.JWT_SECRET || getSetting('jwt_secret', () => crypto.randomBytes(48).toString('hex'));

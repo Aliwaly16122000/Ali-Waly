@@ -20,6 +20,8 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
     max_score: initial?.max_score ?? 10,
     due_at: toLocalInput(initial?.due_at),
     accepts_submissions: initial ? !!initial.accepts_submissions : true,
+    late_policy: initial?.late_policy ?? 'allow',
+    grace_hours: initial?.grace_hours ?? 24,
     description: initial?.description ?? '',
     attachment: null,
   }));
@@ -33,6 +35,7 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
       const body = toForm({
         title: form.title, type: form.type, max_score: form.max_score, description: form.description,
         due_at: form.due_at ? new Date(form.due_at).toISOString() : '', accepts_submissions: String(form.accepts_submissions),
+        late_policy: form.late_policy, grace_hours: form.late_policy === 'grace' ? form.grace_hours : '0',
         attachment: form.attachment,
       });
       if (!form.due_at) body.append('due_at', '');
@@ -67,6 +70,22 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
           <input type="checkbox" className="size-4 accent-brand-600" checked={form.accepts_submissions} onChange={set('accepts_submissions')} />
           <span className="text-sm font-semibold">الطلاب يرفعوا حلولهم أونلاين</span>
         </label>
+        {form.accepts_submissions && form.due_at && (
+          <>
+            <Field label="بعد الموعد">
+              {(id) => (
+                <Select id={id} value={form.late_policy} onChange={set('late_policy')}>
+                  <option value="allow">يُقبل التسليم ويتعلّم عليه "متأخر"</option>
+                  <option value="grace">مهلة إضافية ثم يقفل</option>
+                  <option value="closed">يقفل التسليم عند الموعد بالظبط</option>
+                </Select>
+              )}
+            </Field>
+            {form.late_policy === 'grace' ? (
+              <Field label="مدة المهلة (ساعة)">{(id) => <Input id={id} type="number" min="1" max="336" dir="ltr" value={form.grace_hours} onChange={set('grace_hours')} />}</Field>
+            ) : <div />}
+          </>
+        )}
         <Field label="التعليمات" className="sm:col-span-2">{(id) => <Textarea id={id} value={form.description} onChange={set('description')} placeholder="حل المسائل 1-8 من الفصل الخامس…" />}</Field>
         <Field label="ملف الشيت (اختياري)" className="sm:col-span-2">
           <FileDrop file={form.attachment} onChange={(attachment) => setForm({ ...form, attachment })} hint={initial?.attachment_name ? `الملف الحالي: ${initial.attachment_name}` : 'PDF أو صورة'} />

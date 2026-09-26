@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import QrScanner from 'qr-scanner';
-import { Camera, CameraOff, CheckCircle2, KeyRound, XCircle, QrCode, RotateCcw } from 'lucide-react';
+import { Camera, CameraOff, CheckCircle2, KeyRound, XCircle, QrCode, RotateCcw, MapPin, Smartphone } from 'lucide-react';
 import { api } from '../lib/api';
+import { deviceId, deviceLabel, getLocation } from '../lib/device';
 import { Button, Card, Input, PageHeader, Spinner } from '../components/ui';
 
 /** Student check-in: camera QR scanner, 6-digit code fallback, or a deep link (/attend?t=…). */
@@ -15,6 +16,7 @@ export default function Scan() {
   const [result, setResult] = useState(null); // { ok, message, course }
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   const stopCamera = useCallback(() => {
     scanner.current?.stop();
@@ -27,13 +29,30 @@ export default function Scan() {
     if (busy.current) return;
     busy.current = true;
     setSubmitting(true);
-    try {
-      const res = await api.post('/attendance/scan', payload);
+    const base = { device_id: deviceId(), device_label: deviceLabel() };
+    const done = (res) => {
       stopCamera();
       navigator.vibrate?.(120);
       setResult({ ok: true, already: res.already, course: res.course, session: res.session });
+    };
+    try {
+      done(await api.post('/attendance/scan', { ...payload, ...base }));
     } catch (err) {
-      setResult({ ok: false, message: err.message });
+      if (err.data?.code === 'location_required') {
+        // This course checks that you're in the lecture hall: get a GPS fix and retry.
+        stopCamera();
+        setLocating(true);
+        try {
+          const location = await getLocation();
+          done(await api.post('/attendance/scan', { ticket: err.data.ticket, location, ...base }));
+        } catch (e) {
+          setResult({ ok: false, message: e.message });
+        } finally {
+          setLocating(false);
+        }
+      } else {
+        setResult({ ok: false, message: err.message, code: err.data?.code });
+      }
     } finally {
       busy.current = false;
       setSubmitting(false);
@@ -76,6 +95,14 @@ export default function Scan() {
     <div className="max-w-lg mx-auto">
       <PageHeader title="تسجيل الحضور" subtitle="امسح الـ QR المعروض في المدرج أو اكتب الكود اللي تحته" />
 
+      {locating && (
+        <Card className="p-6 mb-6 text-center">
+          <MapPin className="size-10 mx-auto text-brand-500 animate-bounce mb-3" />
+          <p className="font-bold">جارٍ تحديد موقعك…</p>
+          <p className="text-sm text-muted mt-1">المادة دي بتتأكد إنك موجود في المدرج. لو ظهرلك طلب إذن الموقع اضغط "سماح".</p>
+        </Card>
+      )}
+
       {result && (
         <Card className={`p-6 mb-6 text-center ${result.ok ? 'border-emerald-300 dark:border-emerald-500/40' : 'border-rose-300 dark:border-rose-500/40'}`}>
           {result.ok ? (
@@ -89,6 +116,7 @@ export default function Scan() {
               <div className="size-20 mx-auto rounded-full bg-rose-100 dark:bg-rose-500/15 grid place-items-center mb-4"><XCircle className="size-12 text-rose-600" /></div>
               <p className="text-lg font-bold">لم يتم التسجيل</p>
               <p className="text-muted mt-1">{result.message}</p>
+              {result.code === 'device_mismatch' && <p className="text-xs text-muted mt-2 flex items-center justify-center gap-1"><Smartphone className="size-3.5" /> لحماية الحضور، كل حساب مربوط بموبايل واحد.</p>}
               <Button variant="secondary" icon={RotateCcw} className="mt-4" onClick={startCamera}>حاول مرة أخرى</Button>
             </>
           )}

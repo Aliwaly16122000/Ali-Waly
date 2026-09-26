@@ -1,20 +1,23 @@
 import { Router } from 'express';
 import db from '../db.js';
+import { ACCEPTING_SQL } from './assessments.js';
+import { termFilter } from '../lib/term.js';
 
 const router = Router();
 
 router.get('/', (req, res) => {
   const { user } = req;
   const now = new Date().toISOString();
+  const tf = termFilter();
 
   if (user.role === 'student') {
     const pending = db.prepare(`
       SELECT a.id, a.title, a.type, a.due_at, a.max_score, c.id AS course_id, c.name AS course_name, c.code AS course_code
       FROM enrollments e JOIN assessments a ON a.course_id = e.course_id JOIN courses c ON c.id = a.course_id
       LEFT JOIN submissions s ON s.assessment_id = a.id AND s.student_id = e.student_id
-      WHERE e.student_id = ? AND a.status = 'open' AND a.accepts_submissions = 1
+      WHERE e.student_id = ? AND ${ACCEPTING_SQL} AND ${tf.sql}
         AND s.submitted_at IS NULL AND s.score IS NULL
-      ORDER BY a.due_at IS NULL, a.due_at LIMIT 10`).all(user.id);
+      ORDER BY a.due_at IS NULL, a.due_at LIMIT 10`).all(user.id, ...tf.params);
     const recentGrades = db.prepare(`
       SELECT a.id, a.title, a.max_score, a.published_at, s.score, c.id AS course_id, c.name AS course_name
       FROM enrollments e JOIN assessments a ON a.course_id = e.course_id AND a.status = 'published'
@@ -23,9 +26,9 @@ router.get('/', (req, res) => {
       WHERE e.student_id = ? ORDER BY a.published_at DESC LIMIT 6`).all(user.id);
     const att = db.prepare(`
       SELECT COUNT(s.id) AS total, COUNT(r.session_id) AS attended
-      FROM enrollments e JOIN attendance_sessions s ON s.course_id = e.course_id
+      FROM enrollments e JOIN courses c ON c.id = e.course_id JOIN attendance_sessions s ON s.course_id = e.course_id
       LEFT JOIN attendance_records r ON r.session_id = s.id AND r.student_id = e.student_id
-      WHERE e.student_id = ?`).get(user.id);
+      WHERE e.student_id = ? AND ${tf.sql}`).get(user.id, ...tf.params);
     const activeSessions = db.prepare(`
       SELECT s.id, s.title, s.closes_at, c.name AS course_name,
         EXISTS (SELECT 1 FROM attendance_records r WHERE r.session_id = s.id AND r.student_id = e.student_id) AS attended
@@ -36,7 +39,8 @@ router.get('/', (req, res) => {
       FROM enrollments e JOIN posts p ON p.course_id = e.course_id JOIN courses c ON c.id = p.course_id
       LEFT JOIN users u ON u.id = p.author_id
       WHERE e.student_id = ? ORDER BY p.created_at DESC LIMIT 6`).all(user.id);
-    const courses = db.prepare('SELECT COUNT(*) FROM enrollments WHERE student_id = ?').pluck().get(user.id);
+    const courses = db.prepare(`SELECT COUNT(*) FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE e.student_id = ? AND ${tf.sql}`)
+      .pluck().get(user.id, ...tf.params);
     return res.json({
       courses, pending, recent_grades: recentGrades, active_sessions: activeSessions, announcements,
       attendance: { ...att, rate: att.total ? Math.round((att.attended / att.total) * 1000) / 10 : null },
@@ -50,8 +54,8 @@ router.get('/', (req, res) => {
         (SELECT COUNT(*) FROM submissions s WHERE s.assessment_id = a.id AND s.score IS NOT NULL) AS graded,
         (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = a.course_id) AS students
       FROM course_staff cs JOIN assessments a ON a.course_id = cs.course_id JOIN courses c ON c.id = a.course_id
-      WHERE cs.user_id = ? AND a.status = 'open'
-      ORDER BY ungraded DESC, a.due_at LIMIT 12`).all(user.id);
+      WHERE cs.user_id = ? AND a.status = 'open' AND ${tf.sql}
+      ORDER BY ungraded DESC, a.due_at LIMIT 12`).all(user.id, ...tf.params);
     const awaiting = db.prepare(`
       SELECT a.id, a.title, a.type, a.submitted_at, u.name AS submitted_by_name, c.id AS course_id, c.name AS course_name,
         (SELECT AVG(s.score) FROM submissions s WHERE s.assessment_id = a.id AND s.score IS NOT NULL) AS avg_score, a.max_score
@@ -65,8 +69,10 @@ router.get('/', (req, res) => {
       WHERE cs.user_id = ? AND s.closed_at IS NULL AND s.closes_at > ?`).all(user.id, now);
     const totals = db.prepare(`
       SELECT COUNT(DISTINCT cs.course_id) AS courses,
-        (SELECT COUNT(DISTINCT e.student_id) FROM enrollments e JOIN course_staff c2 ON c2.course_id = e.course_id WHERE c2.user_id = ?) AS students
-      FROM course_staff cs WHERE cs.user_id = ?`).get(user.id, user.id);
+        (SELECT COUNT(DISTINCT e.student_id) FROM enrollments e JOIN course_staff c2 ON c2.course_id = e.course_id
+           JOIN courses c ON c.id = e.course_id WHERE c2.user_id = ? AND ${tf.sql}) AS students
+      FROM course_staff cs JOIN courses c ON c.id = cs.course_id WHERE cs.user_id = ? AND ${tf.sql}`)
+      .get(user.id, ...tf.params, user.id, ...tf.params);
     return res.json({
       ...totals,
       to_grade: toGrade,

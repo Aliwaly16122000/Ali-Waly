@@ -8,7 +8,8 @@
     "seed": "npm run seed --prefix server",
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix client",
-    "start": "NODE_ENV=production npm start --prefix server"
+    "start": "NODE_ENV=production npm start --prefix server",
+    "test": "npm test --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -6,6 +6,8 @@ import db from '../db.js';
 import { parse, badRequest, notFound, toId } from '../lib/http.js';
 import { requireRole } from '../lib/auth.js';
 import { notify } from '../lib/notify.js';
+import { currentTerm, listTerms, setCurrentTerm } from '../lib/term.js';
+import { backupPath, listBackups, runBackup } from '../lib/backup.js';
 import ExcelJS from 'exceljs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -41,6 +43,65 @@ router.get('/overview', (_req, res) => {
         (SELECT COUNT(*) FROM courses c WHERE c.department_id = d.id) AS courses
       FROM departments d ORDER BY d.name`).all(),
   });
+});
+
+// ───────────── Academic term ─────────────
+router.get('/term', (_req, res) => res.json({ current: currentTerm(), terms: listTerms() }));
+
+router.put('/term', (req, res) => {
+  const t = parse(z.object({
+    academic_year: z.string().trim().regex(/^\d{4}\/\d{4}$/, 'السنة الدراسية بصيغة 2026/2027'),
+    semester: z.enum(['fall', 'spring', 'summer']),
+  }), req.body);
+  setCurrentTerm(t);
+  res.json({ ok: true });
+});
+
+/**
+ * Starts a new term by copying selected courses with their staff, timetable and attendance
+ * settings (no students, assessments or grades) into the target term.
+ */
+router.post('/term/clone', (req, res) => {
+  const b = parse(z.object({
+    course_ids: z.array(z.number().int().positive()).min(1),
+    academic_year: z.string().trim().regex(/^\d{4}\/\d{4}$/),
+    semester: z.enum(['fall', 'spring', 'summer']),
+  }), req.body);
+  const created = [];
+  const skipped = [];
+  db.transaction(() => {
+    for (const id of b.course_ids) {
+      const c = db.prepare('SELECT * FROM courses WHERE id = ?').get(id);
+      if (!c) continue;
+      const exists = db.prepare('SELECT 1 FROM courses WHERE code = ? AND academic_year = ? AND semester = ?').get(c.code, b.academic_year, b.semester);
+      if (exists) { skipped.push(c.code); continue; }
+      const newId = Number(db.prepare(`
+        INSERT INTO courses (code, name, department_id, level, semester, academic_year, credit_hours, description,
+          geo_enabled, geo_lat, geo_lng, geo_radius, geo_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(c.code, c.name, c.department_id, c.level, b.semester, b.academic_year,
+        c.credit_hours, c.description, c.geo_enabled, c.geo_lat, c.geo_lng, c.geo_radius, c.geo_label).lastInsertRowid);
+      db.prepare('INSERT INTO course_staff (course_id, user_id, role) SELECT ?, user_id, role FROM course_staff WHERE course_id = ?').run(newId, id);
+      db.prepare(`INSERT INTO course_schedule (course_id, kind, day_of_week, start_time, end_time, location, section, staff_id,
+          remind_before, attendance_mode, attendance_offset, attendance_duration)
+        SELECT ?, kind, day_of_week, start_time, end_time, location, section, staff_id, remind_before, attendance_mode,
+          attendance_offset, attendance_duration FROM course_schedule WHERE course_id = ?`).run(newId, id);
+      created.push({ id: newId, code: c.code });
+    }
+  })();
+  res.json({ created, skipped });
+});
+
+// ───────────── Backups ─────────────
+router.get('/backups', (_req, res) => res.json(listBackups()));
+
+router.post('/backups', async (_req, res) => {
+  res.json(await runBackup());
+});
+
+router.get('/backups/:name', (req, res) => {
+  const file = backupPath(req.params.name);
+  if (!file) throw notFound('النسخة غير موجودة');
+  res.download(file);
 });
 
 // ───────────── Departments ─────────────
@@ -92,8 +153,9 @@ router.get('/users', (req, res) => {
   if (q) { where.push('(u.name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)'); args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   const rows = db.prepare(`
     SELECT u.id, u.name, u.username, u.email, u.phone, u.role, u.department_id, u.level,
-           u.is_active, u.must_change_password, u.last_login_at, u.created_at, d.name AS department_name
-    FROM users u LEFT JOIN departments d ON d.id = u.department_id
+           u.is_active, u.must_change_password, u.last_login_at, u.created_at, d.name AS department_name,
+           sd.bound_at AS device_bound_at, sd.label AS device_label
+    FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN student_devices sd ON sd.user_id = u.id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY u.role, u.name LIMIT 2000`).all(...args);
   res.json(rows);
@@ -291,6 +353,12 @@ router.post('/users/:id/reset-password', (req, res) => {
     .run(bcrypt.hashSync(password, 10), id);
   if (!r.changes) throw notFound();
   res.json({ password });
+});
+
+/** Unbinds a student's phone (lost/changed phone) so the next check-in binds the new one. */
+router.delete('/users/:id/device', (req, res) => {
+  db.prepare('DELETE FROM student_devices WHERE user_id = ?').run(toId(req.params.id));
+  res.json({ ok: true });
 });
 
 router.delete('/users/:id', (req, res) => {

@@ -1,11 +1,12 @@
 export class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, extra) {
     super(message);
     this.status = status;
+    this.extra = extra; // machine-readable fields merged into the JSON error body
   }
 }
 
-export const badRequest = (msg = 'طلب غير صالح') => new HttpError(400, msg);
+export const badRequest = (msg = 'طلب غير صالح', extra) => new HttpError(400, msg, extra);
 export const forbidden = (msg = 'غير مسموح لك بهذا الإجراء') => new HttpError(403, msg);
 export const notFound = (msg = 'العنصر غير موجود') => new HttpError(404, msg);
 

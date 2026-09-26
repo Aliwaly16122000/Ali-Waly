@@ -1,11 +1,85 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { QrCode, Play, CalendarCheck, CheckCircle2, XCircle, Radio, ChevronDown, ChevronUp } from 'lucide-react';
+import { QrCode, Play, CalendarCheck, CheckCircle2, XCircle, Radio, ChevronDown, ChevronUp, MapPin, Crosshair, Smartphone } from 'lucide-react';
+import { getLocation } from '../../lib/device';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
 import { fmtDateTime, pctTone, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, PageLoader, Progress, Select, StatCard, Table, Td, Th, Spinner } from '../../components/ui';
+
+function GeoSettings({ course }) {
+  const [form, setForm] = useState({
+    geo_enabled: !!course.geo_enabled, geo_lat: course.geo_lat, geo_lng: course.geo_lng,
+    geo_radius: course.geo_radius || 300, geo_label: course.geo_label || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const set = (patch) => { setForm((f) => ({ ...f, ...patch })); setDirty(true); };
+
+  const useHere = async () => {
+    setLocating(true);
+    try {
+      const p = await getLocation();
+      set({ geo_lat: Number(p.lat.toFixed(6)), geo_lng: Number(p.lng.toFixed(6)) });
+      toast.success(`تم تحديد الموقع (دقة ±${Math.round(p.accuracy)} متر)`);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLocating(false);
+    }
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/courses/${course.id}/attendance-settings`, {
+        geo_enabled: form.geo_enabled, geo_lat: form.geo_lat ?? null, geo_lng: form.geo_lng ?? null,
+        geo_radius: Number(form.geo_radius), geo_label: form.geo_label || null,
+      });
+      toast.success(form.geo_enabled ? 'تم تفعيل التحقق من الموقع' : 'تم إيقاف التحقق من الموقع');
+      setDirty(false);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const hasPoint = form.geo_lat != null && form.geo_lng != null;
+  return (
+    <Card className="mb-6">
+      <CardHeader icon={MapPin} title="التحقق من الموقع (اختياري)" subtitle="الطالب لازم يكون جوه المدرج أو الكلية عشان يسجل حضوره" />
+      <div className="px-5 pb-5 space-y-4">
+        <label className="flex items-center gap-3 cursor-pointer w-fit">
+          <input type="checkbox" className="size-5 accent-brand-600" checked={form.geo_enabled} onChange={(e) => set({ geo_enabled: e.target.checked })} />
+          <span className="font-semibold">تفعيل التحقق من الموقع في المادة دي</span>
+        </label>
+        {form.geo_enabled && (
+          <div className="grid sm:grid-cols-3 gap-4 items-end">
+            <Field label="المكان">{(id) => <Input id={id} value={form.geo_label} onChange={(e) => set({ geo_label: e.target.value })} placeholder="مدرج 1 / مبنى الكلية" />}</Field>
+            <Field label="المسافة المسموحة">
+              {(id) => (
+                <Select id={id} value={form.geo_radius} onChange={(e) => set({ geo_radius: e.target.value })}>
+                  {[100, 200, 300, 500, 800, 1000].map((m) => <option key={m} value={m}>{m} متر</option>)}
+                </Select>
+              )}
+            </Field>
+            <Button variant="secondary" icon={Crosshair} loading={locating} onClick={useHere}>{hasPoint ? 'تحديث بموقعي الحالي' : 'استخدم موقعي الحالي'}</Button>
+            <p className="sm:col-span-3 text-xs text-muted">
+              {hasPoint
+                ? <>الموقع المحدد: <a className="underline ltr" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${form.geo_lat},${form.geo_lng}`}>{form.geo_lat}, {form.geo_lng}</a> — افتح الصفحة دي وأنت في المدرج واضغط "استخدم موقعي الحالي" لأدق نتيجة. يُنصح بـ 300 متر على الأقل لأن الـ GPS جوه المباني أقل دقة.</>
+                : 'اضغط "استخدم موقعي الحالي" وأنت موجود في المدرج.'}
+            </p>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <Button loading={saving} disabled={!dirty} onClick={save}>حفظ</Button>
+          <p className="text-xs text-muted flex items-center gap-1"><Smartphone className="size-3.5" /> وبشكل تلقائي: كل طالب مربوط بموبايل واحد، ومينفعش موبايل واحد يسجل لطالبين.</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 function SessionRoster({ sessionId, onChanged }) {
   const { data, loading, reload } = useApi(`/attendance/${sessionId}`);
@@ -26,7 +100,7 @@ function SessionRoster({ sessionId, onChanged }) {
           <tr key={s.id}>
             <Td><span className="font-semibold">{s.name}</span> <span className="text-xs text-muted ltr">{s.username}</span></Td>
             <Td className="text-muted text-xs">{s.section}</Td>
-            <Td>{s.recorded_at ? <Badge tone="green">حاضر · {s.method === 'qr' ? 'QR' : s.method === 'code' ? 'كود' : 'يدوي'}</Badge> : <Badge tone="red">غائب</Badge>}</Td>
+            <Td>{s.recorded_at ? <Badge tone="green">حاضر · {s.method === 'qr' ? 'QR' : s.method === 'code' ? 'كود' : 'يدوي'}{s.distance_m != null ? ` · ${Math.round(s.distance_m)} م` : ''}</Badge> : <Badge tone="red">غائب</Badge>}</Td>
             <Td className="text-left"><Button size="sm" variant="ghost" onClick={() => toggle(s)}>{s.recorded_at ? 'تسجيل غياب' : 'تسجيل حضور'}</Button></Td>
           </tr>
         ))}
@@ -72,6 +146,8 @@ function StaffAttendance({ course, data, reload }) {
         <StatCard icon={CalendarCheck} label="عدد المحاضرات" value={data.sessions.length} />
         <StatCard icon={CheckCircle2} label="متوسط الحضور" value={avg === null ? '—' : `${avg}%`} tone={pctTone(avg)} />
       </div>
+
+      <GeoSettings course={course} />
 
       {active.map((s) => (
         <Card key={s.id} className="p-4 mb-4 flex flex-wrap items-center gap-3 border-emerald-300 dark:border-emerald-500/40">
