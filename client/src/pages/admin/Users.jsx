@@ -65,7 +65,7 @@ function UserForm({ initial, departments, onClose, onSaved }) {
   );
 }
 
-function CredentialsModal({ creds, onClose }) {
+export function CredentialsModal({ creds, onClose }) {
   if (!creds) return null;
   const copy = () => navigator.clipboard?.writeText(creds.map((c) => `${c.name}\t${c.username}\t${c.password}`).join('\n')).then(() => toast.success('تم النسخ'));
   return (

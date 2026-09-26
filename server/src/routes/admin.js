@@ -6,7 +6,9 @@ import db from '../db.js';
 import { parse, badRequest, notFound, toId } from '../lib/http.js';
 import { requireRole } from '../lib/auth.js';
 import { notify } from '../lib/notify.js';
-import { listTerms, setCurrentTerm, setTermDates, termInfo } from '../lib/term.js';
+import { currentTerm, listTerms, setCurrentTerm, setTermDates, termInfo } from '../lib/term.js';
+import { applyPlan, planTemplate } from '../lib/plan.js';
+import { readSheets } from '../lib/excel.js';
 import { backupPath, listBackups, runBackup } from '../lib/backup.js';
 import ExcelJS from 'exceljs';
 import fs from 'node:fs/promises';
@@ -726,6 +728,31 @@ router.put('/courses/:id/enrollments/:studentId', (req, res) => {
 router.delete('/courses/:id/enrollments/:studentId', (req, res) => {
   db.prepare('DELETE FROM enrollments WHERE course_id = ? AND student_id = ?').run(toId(req.params.id), toId(req.params.studentId));
   res.json({ ok: true });
+});
+
+// ───────────── Department plan (courses + staff + weekly timetable in one workbook) ─────────────
+router.get('/plan/template.xlsx', async (_req, res) => {
+  const wb = await planTemplate();
+  res.attachment('engportal-department-plan.xlsx');
+  await wb.xlsx.write(res);
+  res.end();
+});
+
+router.post('/plan/import', upload.single('file'), async (req, res) => {
+  if (!req.file) throw badRequest('ارفع ملف خطة القسم (.xlsx)');
+  let sheets;
+  try {
+    if (path.extname(req.file.originalname).toLowerCase() !== '.xlsx') throw badRequest('الملف لازم يكون .xlsx');
+    sheets = await readSheets(req.file.path, { skip: ['تعليمات'] });
+  } finally {
+    removeUpload(storedName(req.file));
+  }
+  const { summary, newStaff } = applyPlan(sheets, { term: currentTerm(), importUsers });
+  for (const [courseId, ids] of newStaff) {
+    const course = db.prepare('SELECT name, code FROM courses WHERE id = ?').get(courseId);
+    notify(ids, { type: 'course', title: `تم إسنادك لمادة ${course.name}`, body: course.code, link: `/courses/${courseId}` });
+  }
+  res.json(summary);
 });
 
 export default router;
