@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Library, Users, Pencil, ChevronLeft } from 'lucide-react';
+import { Plus, Search, Library, Users, Pencil, ChevronLeft, Upload, Download, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '../../lib/api';
+import { api, toForm } from '../../lib/api';
+import { CredentialsModal } from './Users';
 import { useApi } from '../../lib/useApi';
 import { LEVEL_LABELS, SEMESTER_LABELS, titled } from '../../lib/format';
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, PageHeader, PageLoader, Select, Table, Td, Textarea, Th } from '../../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, ErrorState, Field, FileDrop, Input, Modal, PageHeader, PageLoader, Select, Table, Td, Textarea, Th } from '../../components/ui';
 
 const currentYear = () => {
   const d = new Date();
@@ -56,17 +57,74 @@ export function CourseForm({ initial, departments, onClose, onSaved }) {
   );
 }
 
+/** One workbook → a department's courses, their doctors/TAs and the weekly timetable. */
+function PlanImportModal({ onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState([]);
+  const [result, setResult] = useState(null);
+
+  const run = async () => {
+    setBusy(true);
+    setErrors([]);
+    try {
+      const res = await api.post('/admin/plan/import', toForm({ file }));
+      setResult(res);
+      onDone(res);
+    } catch (err) {
+      setErrors(err.data?.errors || []);
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} size="lg" title="استيراد خطة القسم" subtitle="المواد + الدكاترة والمعيدين + الجدول الأسبوعي في ملف واحد"
+      footer={<><Button variant="secondary" onClick={onClose}>إغلاق</Button>{!result && <Button icon={Upload} loading={busy} disabled={!file} onClick={run}>استيراد</Button>}</>}>
+      {result ? (
+        <Alert tone="green" icon={CheckCircle2} title="تم تنزيل الخطة">
+          {result.courses_created} مادة جديدة · {result.courses_updated} مادة اتحدثت · {result.slots} ميعاد في الجدول · {result.staff_links} إسناد لهيئة التدريس
+          {result.created.length > 0 && ` · ${result.created.length} حساب جديد`}
+          {result.departments.length > 0 && ` · قسم جديد: ${result.departments.map((d) => d.name).join('، ')}`}
+          <p className="mt-2">الخطوة الجاية: سجّل الطلبة من "إدارة" المادة ← تسجيل دفعة كاملة.</p>
+        </Alert>
+      ) : (
+        <>
+          <div className="rounded-2xl border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10 p-4 mb-4 flex flex-wrap items-center gap-4">
+            <FileSpreadsheet className="size-10 text-emerald-600 shrink-0" />
+            <div className="flex-1 min-w-56">
+              <p className="font-bold">1) حمّل النموذج واملأه</p>
+              <p className="text-sm text-muted">شيت للدكاترة والمعيدين، شيت للمواد، وشيت للجدول. المواد بتتسجل في الترم الحالي، ولو رفعت الملف تاني بيتحدث من غير تكرار.</p>
+            </div>
+            <Button as="a" href="/api/admin/plan/template.xlsx" icon={Download}>تحميل النموذج</Button>
+          </div>
+          <p className="font-bold mb-2">2) ارفع الملف</p>
+          <FileDrop file={file} onChange={setFile} accept=".xlsx" hint="ملف خطة القسم (.xlsx) — لو فيه أي خطأ مفيش حاجة بتتغير" />
+          {errors.length > 0 && (
+            <div className="mt-4 rounded-xl border border-rose-200 dark:border-rose-500/30 max-h-56 overflow-y-auto">
+              {errors.map((e, i) => <p key={i} className="text-sm px-3 py-1.5 border-b border-line last:border-0"><b>{e.sheet ? `شيت ${e.sheet} · ` : ''}صف {e.row}:</b> {e.error}</p>)}
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
 export default function AdminCourses() {
   const { data, error, loading, reload } = useApi('/admin/courses');
   const { data: departments } = useApi('/admin/departments');
   const [dept, setDept] = useState('');
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [creds, setCreds] = useState(null);
   const list = useMemo(() => (data || []).filter((c) => (!dept || c.department_id === Number(dept)) && (!q || c.name.includes(q) || c.code.includes(q.toUpperCase()))), [data, dept, q]);
 
   return (
     <>
-      <PageHeader title="المواد والتسجيل" subtitle="أنشئ المواد، أسند الدكاترة والمعيدين، وسجّل الطلاب" actions={<Button icon={Plus} onClick={() => setEditing({})}>مادة جديدة</Button>} />
+      <PageHeader title="المواد والتسجيل" subtitle="أنشئ المواد، أسند الدكاترة والمعيدين، وسجّل الطلاب" actions={<><Button variant="secondary" icon={Upload} onClick={() => setPlanOpen(true)}>استيراد خطة القسم</Button><Button icon={Plus} onClick={() => setEditing({})}>مادة جديدة</Button></>} />
       <Card className="overflow-hidden">
         <div className="flex flex-wrap gap-3 p-4 border-b border-line">
           <div className="relative flex-1 min-w-48">
@@ -105,6 +163,8 @@ export default function AdminCourses() {
         )}
       </Card>
       {editing && <CourseForm initial={editing.id ? editing : null} departments={departments || []} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(true); }} />}
+      {planOpen && <PlanImportModal onClose={() => setPlanOpen(false)} onDone={(r) => { reload(true); if (r.created.length) setCreds(r.created); }} />}
+      <CredentialsModal creds={creds} onClose={() => setCreds(null)} />
     </>
   );
 }

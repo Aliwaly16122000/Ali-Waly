@@ -251,6 +251,55 @@ test('admin: Excel template round-trip imports students, doctors and TAs with se
   assert.equal(enrolled.find((e) => e.username === '2098001').section, 'سكشن 2');
 });
 
+test('admin: department plan creates courses, staff and timetable in one go (all or nothing)', async () => {
+  const { default: ExcelJS } = await import('exceljs');
+  const tpl = await admin.get('/admin/plan/template.xlsx');
+  assert.equal(tpl.status, 200);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(tpl.data);
+  const fill = (sheet, row, values) => values.forEach((v, i) => { wb.getWorksheet(sheet).getCell(row, i + 1).value = v; });
+  fill('الدكاترة', 2, ['دكتور الخطة', 'd.plan', 'CIV']);
+  fill('الدكاترة', 3, ['موجود قبل كده', 'd.ahmed']); // existing username → skipped, not an error
+  fill('المعيدين', 2, ['معيد الخطة', 'ta.plan', 'CIV']);
+  fill('المواد', 2, ['PLN101', 'مادة الخطة', 'PLNCH - قسم جديد بالخطة', '1 - الفرقة الأولى', 2, 'd.plan', 'ta.plan']);
+  fill('الجدول', 2, ['PLN101', 'محاضرة', 'الأحد', '8:30', '10:00', 'مدرج 2', '', 'd.plan', 'تذكير']);
+  fill('الجدول', 3, ['PLN101', 'سكشن', 'الاثنين', '12:15', '13:30', '415', '1', '', 'تلقائي']);
+  fill('الجدول', 4, ['PLN101', 'سكشن', 'يوم غلط', '12:15', '13:30']);
+  const upload = async () => {
+    const fd = new FormData();
+    fd.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'plan.xlsx');
+    return admin.post('/admin/plan/import', fd);
+  };
+
+  const bad = await upload();
+  assert.equal(bad.status, 400);
+  assert.equal(bad.data.errors[0].sheet, 'الجدول');
+  assert.equal(bad.data.errors[0].row, 4);
+  assert.ok(!(await admin.get('/admin/users?q=الخطة')).data.length, 'nothing is created when the file has errors');
+
+  fill('الجدول', 4, ['PLN101', 'معمل', 'الأربعاء', '13:45', '15:00', 'معمل', '2']);
+  const ok = await upload();
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.deepEqual(ok.data.created.map((c) => c.username).sort(), ['d.plan', 'ta.plan']);
+  assert.equal(ok.data.skipped_users, 1);
+  assert.equal(ok.data.courses_created, 1);
+  assert.equal(ok.data.slots, 3);
+  assert.deepEqual(ok.data.departments.map((d) => d.code), ['PLNCH']);
+
+  const course = (await admin.get('/admin/courses')).data.find((c) => c.code === 'PLN101');
+  assert.equal(course.level, 1);
+  assert.equal(course.credit_hours, 2);
+  assert.deepEqual(course.staff.map((s) => s.role).sort(), ['doctor', 'ta']);
+  const slots = (await admin.get(`/courses/${course.id}/schedule`)).data;
+  assert.deepEqual(slots.map((s) => [s.kind, s.day_of_week, s.start_time, s.section, s.attendance_mode]),
+    [['lecture', 0, '08:30', null, 'remind'], ['section', 1, '12:15', '1', 'auto'], ['lab', 3, '13:45', '2', 'remind']]);
+
+  // Uploading again updates in place: no duplicate course or slots.
+  const again = await upload();
+  assert.equal(again.data.courses_updated, 1);
+  assert.equal((await admin.get(`/courses/${course.id}/schedule`)).data.length, 3);
+});
+
 test('calendar: term week, holidays cancel classes and stop timetable reminders', async () => {
   const term = (await student.get('/calendar/term')).data;
   assert.equal(term.status, 'running');
