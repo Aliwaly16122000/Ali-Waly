@@ -1,0 +1,14 @@
+{
+  "setupTasks": [
+    { "name": "Install dependencies", "command": "npm run setup" },
+    { "name": "Build the web app", "command": "npm run build" }
+  ],
+  "tasks": {
+    "start": {
+      "name": "EngPortal",
+      "command": "npm run demo --prefix server",
+      "runAtStart": true,
+      "preview": { "port": 4000 }
+    }
+  }
+}
