@@ -1,0 +1,11 @@
+{
+  "name": "EngPortal",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm run setup && npm run build",
+  "postAttachCommand": "npm run demo --prefix server",
+  "forwardPorts": [4000],
+  "portsAttributes": {
+    "4000": { "label": "EngPortal", "onAutoForward": "openBrowser" }
+  },
+  "hostRequirements": { "cpus": 2 }
+}

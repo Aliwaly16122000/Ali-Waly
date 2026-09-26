@@ -1,0 +1,14 @@
+services:
+  engportal:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: change-me-now
+      APP_TIMEZONE: Africa/Cairo
+    volumes:
+      - engportal-data:/data
+volumes:
+  engportal-data:
