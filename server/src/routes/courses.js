@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
+import { gradesLock } from '../lib/visibility.js';
 import { ACCEPTING_SQL } from './assessments.js';
 import { isArchived, listTerms, termFilter, termInfo } from '../lib/term.js';
 import { ah, parse, notFound, forbidden, toId } from '../lib/http.js';
@@ -53,7 +54,10 @@ router.get('/', (req, res) => {
       FROM course_staff cs JOIN courses c ON c.id = cs.course_id LEFT JOIN departments d ON d.id = c.department_id
       WHERE cs.user_id = ? AND ${tf.sql} ORDER BY c.academic_year DESC, c.code`).all(user.id, ...tf.params);
   }
-  res.json(rows.map((c) => ({ ...hydrate(c), archived: isArchived(c) })));
+  res.json(rows.map((c) => {
+    const lock = user.role === 'student' ? gradesLock(user.id, c) : null;
+    return { ...hydrate(c), archived: isArchived(c), ...(lock ? { my_total: null, published_max: null, grades_lock: lock } : {}) };
+  }));
 });
 
 /** Current term + the terms this user has courses in (for the archive switcher). */
@@ -75,7 +79,23 @@ router.get('/:id', (req, res) => {
         WHERE s.course_id = ? AND s.section = ?`).all(id, mySection);
     }
   }
-  res.json({ ...hydrate(course), my_role: role, archived: isArchived(course), my_section: mySection, section_staff: sectionStaff });
+  res.json({
+    ...hydrate(course), my_role: role, archived: isArchived(course), my_section: mySection, section_staff: sectionStaff,
+    grades_lock: role === 'student' ? gradesLock(req.user.id, course) : null,
+  });
+});
+
+/** Doctor/admin: hide the course's grades from students, optionally until a date. */
+router.put('/:id/grade-visibility', (req, res) => {
+  const id = toId(req.params.id);
+  const { course } = courseAccess(req.user, id, ['doctor']);
+  const v = parse(z.object({
+    hidden: z.boolean(),
+    visible_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  }), req.body);
+  db.prepare('UPDATE courses SET grades_hidden = ?, grades_visible_from = ? WHERE id = ?').run(Number(v.hidden), v.hidden ? v.visible_from || null : null, id);
+  if (course.grades_hidden && !v.hidden) announceGrades(course);
+  res.json({ ok: true });
 });
 
 router.get('/:id/students', (req, res) => {
@@ -142,6 +162,15 @@ router.post('/:id/posts', upload.single('file'), ah(async (req, res) => {
   });
   res.status(201).json({ id: Number(lastInsertRowid) });
 }));
+
+/** Tells students their (previously hidden) grades are now visible. */
+export function announceGrades(course) {
+  const published = db.prepare("SELECT COUNT(*) FROM assessments WHERE course_id = ? AND status = 'published'").pluck().get(course.id);
+  if (!published) return;
+  notify(courseStudentIds(course.id), {
+    type: 'grades_published', title: `🎉 درجات ${course.name} متاحة دلوقتي`, body: 'افتح المادة وشوف درجاتك', link: `/courses/${course.id}?tab=grades`,
+  });
+}
 
 export const postsRouter = Router();
 

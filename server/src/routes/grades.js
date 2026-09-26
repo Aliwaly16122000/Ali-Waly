@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import db from '../db.js';
+import { gradesLock } from '../lib/visibility.js';
 import { parse, badRequest, toId } from '../lib/http.js';
 import { courseAccess, READERS } from '../lib/access.js';
 import { describe, histogram, letterGrade, LETTERS, round } from '../lib/stats.js';
@@ -20,7 +21,9 @@ router.get('/gradebook', (req, res) => {
 /** A student's own published grades in a course. */
 router.get('/my-grades', (req, res) => {
   const courseId = toId(req.params.courseId);
-  courseAccess(req.user, courseId, ['student']);
+  const { course } = courseAccess(req.user, courseId, ['student']);
+  const lock = gradesLock(req.user.id, course);
+  if (lock) return res.json({ locked: lock, items: [], total: null, max: null, percentage: null, letter: null, attendance: attendanceRates(courseId).get(req.user.id) ?? null });
   const items = db.prepare(`
     SELECT a.id, a.title, a.type, a.max_score, a.published_at, s.score, s.feedback,
       (SELECT AVG(s2.score) FROM submissions s2 WHERE s2.assessment_id = a.id AND s2.score IS NOT NULL) AS class_avg,

@@ -31,6 +31,9 @@ const Exams = lazy(() => import('./pages/Exams'));
 const AdminExams = lazy(() => import('./pages/admin/Exams'));
 const Oversight = lazy(() => import('./pages/Oversight'));
 const AdminFaculties = lazy(() => import('./pages/admin/Faculties'));
+const AdminSurveys = lazy(() => import('./pages/admin/Surveys'));
+const SurveyList = lazy(() => import('./pages/surveys/Student').then((m) => ({ default: m.SurveyList })));
+const SurveyForm = lazy(() => import('./pages/surveys/Student').then((m) => ({ default: m.SurveyForm })));
 
 function Protected({ roles, children }) {
   const { user } = useAuth();
@@ -70,6 +73,9 @@ function AppRoutes() {
             <Route path="chat/:id" element={<Protected roles={['student', 'ta', 'doctor']}><Chat /></Protected>} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="calendar" element={<CalendarPage />} />
+            <Route path="surveys" element={<Protected roles={['student']}><SurveyList /></Protected>} />
+            <Route path="surveys/:id/:courseId" element={<Protected roles={['student']}><SurveyForm /></Protected>} />
+            <Route path="admin/surveys" element={<Protected roles={['admin']}><AdminSurveys /></Protected>} />
             <Route path="oversight" element={<Oversight />} />
             <Route path="oversight/:level/:id" element={<Oversight />} />
             <Route path="admin/faculties" element={<Protected roles={['admin']}><AdminFaculties /></Protected>} />

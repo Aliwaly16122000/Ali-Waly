@@ -2,12 +2,14 @@ import { Link } from 'react-router-dom';
 import { Award, CalendarCheck, TrendingUp } from 'lucide-react';
 import { useApi } from '../../lib/useApi';
 import { TYPE_LABELS, num, pctTone } from '../../lib/format';
+import LockNotice from '../../components/LockNotice';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, PageLoader, Progress, StatCard, Table, Td, Th } from '../../components/ui';
 
 export default function StudentGrades({ course }) {
   const { data, error, loading, reload } = useApi(`/courses/${course.id}/my-grades`);
   if (loading && !data) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (data.locked) return <LockNotice lock={data.locked} />;
   return (
     <>
       <div className="grid sm:grid-cols-3 gap-4 mb-6">

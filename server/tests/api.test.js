@@ -365,3 +365,55 @@ test('admin: faculties CRUD and leadership assignment', async () => {
   assert.equal((await ta.get(`/oversight/faculty/${f.data.id}`)).status, 403);
   assert.equal((await doctor.get('/admin/faculties')).status, 403);
 });
+
+test('grade visibility: doctor hides grades until a date; students see nothing, staff still do', async () => {
+  const future = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  assert.equal((await ta.put('/courses/2/grade-visibility', { hidden: true })).status, 403);
+  assert.equal((await doctor.put('/courses/2/grade-visibility', { hidden: true, visible_from: future })).status, 200);
+  const mine = (await student.get('/courses/2/my-grades')).data;
+  assert.equal(mine.locked.reason, 'hidden');
+  assert.equal(mine.locked.until, future);
+  assert.ok((await student.get('/courses/2/assessments')).data.every((a) => a.score === null));
+  assert.equal((await student.get('/courses')).data.find((c) => c.id === 2).my_total, null);
+  assert.ok((await doctor.get('/courses/2/gradebook')).data.rows.length > 0);
+
+  assert.equal((await doctor.put('/courses/2/grade-visibility', { hidden: false })).status, 200);
+  assert.equal((await student.get('/courses/2/my-grades')).data.locked, undefined);
+  const notes = (await student.get('/notifications?limit=3')).data.items.map((n) => n.title);
+  assert.ok(notes.some((t) => t.includes('متاحة دلوقتي')));
+});
+
+test('surveys: required survey unlocks grades and exam timetable per course', async () => {
+  const template = (await admin.get('/surveys/template')).data;
+  const created = await admin.post('/surveys', {
+    title: 'تقييم المواد', questions: template, gate_grades: true, gate_exams: true, target: { course_ids: [1, 2] },
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const id = created.data.id;
+  // drafts don't lock anything
+  assert.equal((await student.get('/courses/1/my-grades')).data.locked, undefined);
+  await admin.post(`/surveys/${id}/status`, { status: 'open' });
+
+  assert.equal((await student.get('/courses/1/my-grades')).data.locked.reason, 'survey');
+  const exams = (await student.get('/exams/me')).data.exams.filter((x) => x.course_id === 1);
+  assert.ok(exams.length && exams.every((x) => x.locked && !x.exam_date), 'exam details hidden until survey answered');
+  assert.equal((await student.get('/surveys/pending')).data.filter((p) => p.id === id).length, 2);
+
+  // validation: required answers
+  assert.equal((await student.post(`/surveys/${id}/respond`, { course_id: 1, answers: { q1: 5 } })).status, 400);
+  const answers = { q1: 5, q2: 4, q3: 4, q4: 5, q5: 3, q6: 'مناسبة', q7: 'شكراً' };
+  assert.equal((await student.post(`/surveys/${id}/respond`, { course_id: 1, answers })).status, 200);
+  assert.equal((await student.get('/courses/1/my-grades')).data.locked, undefined);
+  assert.ok((await student.get('/exams/me')).data.exams.filter((x) => x.course_id === 1).every((x) => !x.locked));
+  assert.equal((await student.get('/courses/2/my-grades')).data.locked.reason, 'survey', 'other course still locked');
+  assert.equal((await otherStudent.post(`/surveys/${id}/respond`, { course_id: 1, answers })).status, 403);
+
+  // anonymous aggregated results for the course doctor; students can't read results
+  const r = (await doctor.get(`/surveys/${id}/results?course_id=1`)).data;
+  assert.equal(r.responses, 1);
+  assert.equal(r.results.find((q) => q.id === 'q1').mean, 5);
+  assert.ok(!JSON.stringify(r).includes('2023001'));
+  assert.equal((await student.get(`/surveys/${id}/results?course_id=1`)).status, 403);
+  await admin.post(`/surveys/${id}/status`, { status: 'closed' });
+  assert.equal((await student.get('/courses/2/my-grades')).data.locked, undefined, 'closing a survey removes the gate');
+});

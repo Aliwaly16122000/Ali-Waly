@@ -5,6 +5,7 @@ import { localNow, toMinutes } from './clock.js';
 import { isTeachingDay, termFilter } from './term.js';
 import { dailyBackup } from './backup.js';
 import { examReminders } from '../routes/exams.js';
+import { announceGrades } from '../routes/courses.js';
 import { openAttendanceSession } from '../routes/attendance.js';
 import { KIND_LABELS, slotTitle } from '../routes/schedule.js';
 
@@ -133,11 +134,21 @@ function timetable() {
   }
 }
 
+/** Grades hidden "until <date>" become visible on that date, and students are told. */
+function releaseHiddenGrades(now) {
+  const due = db.prepare('SELECT * FROM courses WHERE grades_hidden = 1 AND grades_visible_from IS NOT NULL AND grades_visible_from <= ?').all(now.date);
+  for (const c of due) {
+    db.prepare('UPDATE courses SET grades_hidden = 0, grades_visible_from = NULL WHERE id = ?').run(c.id);
+    announceGrades(c);
+  }
+}
+
 export function startScheduler() {
   const tick = () => {
     try {
       timetable();
       examReminders(localNow());
+      releaseHiddenGrades(localNow());
       deadlineReminders();
       absenceWarnings();
       dailyBackup().catch((err) => console.error('backup failed', err));

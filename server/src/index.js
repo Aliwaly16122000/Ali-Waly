@@ -25,6 +25,7 @@ import calendarRoutes from './routes/calendar.js';
 import examRoutes from './routes/exams.js';
 import brandingRoutes from './routes/branding.js';
 import oversightRoutes from './routes/oversight.js';
+import surveyRoutes from './routes/surveys.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -66,6 +67,7 @@ api.use('/schedule', scheduleRoutes);
 api.use('/calendar', calendarRoutes);
 api.use('/exams', examRoutes);
 api.use('/oversight', oversightRoutes);
+api.use('/surveys', surveyRoutes);
 api.use('/chat', chatRoutes);
 api.use('/messages', messagesRouter);
 api.use('/notifications', notificationRoutes);

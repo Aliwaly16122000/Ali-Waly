@@ -13,6 +13,7 @@ import {
   PageLoader, Select, Spinner, Table, Td, Textarea, Th, cx,
 } from '../components/ui';
 import AssessmentForm from './course/AssessmentForm';
+import LockNotice from '../components/LockNotice';
 
 function Steps({ status }) {
   const steps = [
@@ -167,6 +168,8 @@ function StudentView({ a, reload }) {
             </div>
             {s.feedback && <div className="rounded-xl bg-surface-2 p-3 text-sm text-right"><p className="font-bold mb-1">تعليق المصحح</p>{s.feedback}</div>}
           </>
+        ) : a.grades_lock ? (
+          <div className="my-6"><LockNotice lock={a.grades_lock} compact /></div>
         ) : published ? (
           <p className="my-8 text-rose-600 font-semibold">لم تُرصد لك درجة</p>
         ) : (

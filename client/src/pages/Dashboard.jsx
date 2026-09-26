@@ -56,7 +56,7 @@ function NextClass() {
 
 function UpcomingExams() {
   const { data } = useApi('/exams/me');
-  const upcoming = (data?.exams || []).filter((x) => daysUntil(x.exam_date) >= 0).slice(0, 4);
+  const upcoming = (data?.exams || []).filter((x) => !x.locked && daysUntil(x.exam_date) >= 0).slice(0, 4);
   if (!upcoming.length) return null;
   return (
     <Card className="mb-6">
@@ -131,6 +131,13 @@ function StudentDashboard({ data, user }) {
     <>
       <Greeting user={user} subtitle={`${user.department_name ?? ''} · ${data.courses} مواد مسجلة هذا الترم`} />
       <LiveSessionBanner sessions={data.active_sessions} student />
+      {data.pending_surveys?.length > 0 && (
+        <Link to="/surveys" className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 mb-6">
+          <ClipboardCheck className="size-6 text-amber-600" />
+          <p className="flex-1 font-semibold">عندك {data.pending_surveys.length} استبيان مطلوب{data.pending_surveys.some((s) => s.gate_grades || s.gate_exams) ? ' — لازم يتملى عشان تشوف الدرجات / الامتحانات' : ''}</p>
+          <span className="text-sm font-bold text-amber-700 dark:text-amber-300">املأ دلوقتي ←</span>
+        </Link>
+      )}
       <NextClass />
       <UpcomingExams />
       <TodaySchedule />

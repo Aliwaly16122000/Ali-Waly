@@ -299,6 +299,36 @@ CREATE TABLE IF NOT EXISTS oversight (
   PRIMARY KEY (user_id, scope, scope_id)
 );
 
+-- Surveys (e.g. course evaluation). Admin can require one before a student sees their
+-- grades and/or exam timetable for a course. Answers are anonymous to teaching staff.
+CREATE TABLE IF NOT EXISTS surveys (
+  id               INTEGER PRIMARY KEY,
+  title            TEXT NOT NULL,
+  description      TEXT,
+  questions        TEXT NOT NULL,
+  gate_grades      INTEGER NOT NULL DEFAULT 0,
+  gate_exams       INTEGER NOT NULL DEFAULT 0,
+  share_with_staff INTEGER NOT NULL DEFAULT 1,
+  status           TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','open','closed')),
+  created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS survey_courses (
+  survey_id INTEGER NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  PRIMARY KEY (survey_id, course_id)
+);
+
+CREATE TABLE IF NOT EXISTS survey_responses (
+  survey_id    INTEGER NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+  course_id    INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  student_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  answers      TEXT NOT NULL,
+  submitted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (survey_id, course_id, student_id)
+);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -315,6 +345,8 @@ function addColumn(table, column, definition) {
   if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 addColumn('courses', 'grading_scheme', 'TEXT');
+addColumn('courses', 'grades_hidden', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('courses', 'grades_visible_from', 'TEXT'); // local date the grades unhide automatically
 addColumn('departments', 'faculty_id', 'INTEGER REFERENCES faculties(id) ON DELETE SET NULL');
 
 // Databases created before the 'leader' role existed: rebuild users with the wider CHECK

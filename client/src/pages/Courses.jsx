@@ -43,6 +43,7 @@ function CourseCard({ c, role }) {
             {role === 'student' ? (
               <>
                 {c.pending_count > 0 ? <Badge tone="amber"><FileText className="size-3" /> {c.pending_count} مطلوب تسليمه</Badge> : <Badge tone="green">لا يوجد مطلوب</Badge>}
+                {c.grades_lock && <Badge tone="amber">{c.grades_lock.reason === 'survey' ? '🔒 املأ الاستبيان لفتح الدرجات' : '🙈 الدرجات مخفية مؤقتاً'}</Badge>}
                 {pct !== null && (
                   <div className="w-full mt-1">
                     <div className="flex justify-between text-xs mb-1"><span className="text-muted">مجموعك حتى الآن</span><span className="font-bold ltr">{num(c.my_total ?? 0)} / {num(c.published_max)}</span></div>

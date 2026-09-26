@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import db from '../db.js';
+import { examsLock } from '../lib/visibility.js';
 import { parse, badRequest, forbidden, notFound, toId } from '../lib/http.js';
 import { courseRole } from '../lib/access.js';
 import { notify } from '../lib/notify.js';
@@ -53,9 +54,16 @@ router.get('/me', (req, res) => {
         AND st.period = CASE WHEN x.kind = 'midterm' THEN 'midterm' ELSE 'final' END
       WHERE e.student_id = ? AND x.published = 1 AND ${tf.sql}
       ORDER BY x.exam_date, x.start_time`).all(user.id, ...tf.params);
+    // Exams locked behind an unanswered survey show the course only, without date/place/seat.
+    const locks = new Map();
+    const shown = rows.map((x) => {
+      if (!locks.has(x.course_id)) locks.set(x.course_id, examsLock(user.id, x.course_id));
+      const lock = locks.get(x.course_id);
+      return lock ? { id: x.id, course_id: x.course_id, course_name: x.course_name, course_code: x.course_code, kind: x.kind, locked: lock } : x;
+    });
     const seats = t ? db.prepare('SELECT period, seat_number, hall FROM exam_seating WHERE student_id = ? AND academic_year = ? AND semester = ?')
       .all(user.id, t.academic_year, t.semester) : [];
-    return res.json({ exams: rows, seats });
+    return res.json({ exams: shown, seats: [...locks.values()].some(Boolean) ? [] : seats });
   }
   const rows = user.role === 'admin'
     ? db.prepare(`SELECT ${EXAM_COLUMNS} FROM exams x JOIN courses c ON c.id = x.course_id LEFT JOIN departments d ON d.id = c.department_id

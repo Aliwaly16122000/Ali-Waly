@@ -6,11 +6,13 @@ import { useApi } from '../lib/useApi';
 import { useAuth } from '../context/AuthContext';
 import { clock12 } from '../lib/format';
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, PageLoader, cx } from '../components/ui';
+import LockNotice from '../components/LockNotice';
 import { EXAM_KINDS, EXAM_TONES, ExamForm, daysUntil, examDay, untilLabel } from './exams/shared';
 
 function StudentExams({ data }) {
-  const upcoming = data.exams.filter((x) => daysUntil(x.exam_date) >= 0);
-  const past = data.exams.filter((x) => daysUntil(x.exam_date) < 0);
+  const open = data.exams.filter((x) => !x.locked);
+  const upcoming = open.filter((x) => daysUntil(x.exam_date) >= 0);
+  const past = open.filter((x) => daysUntil(x.exam_date) < 0);
   return (
     <>
       {data.seats.length > 0 && (
@@ -28,6 +30,16 @@ function StudentExams({ data }) {
         <Card><EmptyState icon={ClipboardList} title="لم ينزل جدول امتحانات بعد" description="هيوصلك إشعار أول ما الجدول ينزل" /></Card>
       ) : (
         <div className="space-y-3">
+          {data.exams.filter((x) => x.locked).map((x) => (
+            <Card key={x.id} className="p-4 flex flex-wrap items-center gap-4 border-amber-200 dark:border-amber-500/30">
+              <div className="flex-1 min-w-48">
+                <Badge tone={EXAM_TONES[x.kind]}>{EXAM_KINDS[x.kind]}</Badge>
+                <p className="font-bold mt-1">{x.course_name}</p>
+                <LockNotice lock={x.locked} what="مواعيد الامتحان" compact />
+              </div>
+              <Button to={`/surveys/${x.locked.survey_id}/${x.locked.course_id}`}>املأ الاستبيان</Button>
+            </Card>
+          ))}
           {upcoming.map((x) => {
             const soon = daysUntil(x.exam_date) <= 1;
             return (

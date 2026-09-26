@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
+import { examsLock } from '../lib/visibility.js';
 import { parse, badRequest, notFound, toId } from '../lib/http.js';
 import { requireRole } from '../lib/auth.js';
 import { notify } from '../lib/notify.js';
@@ -68,7 +69,8 @@ router.get('/', (req, res) => {
     }
 
     const exams = db.prepare(`SELECT x.* FROM exams x WHERE x.course_id IN (${qs}) AND x.exam_date BETWEEN ? AND ?
-      ${user.role === 'student' ? 'AND x.published = 1' : ''}`).all(...ids, from, to);
+      ${user.role === 'student' ? 'AND x.published = 1' : ''}`).all(...ids, from, to)
+      .filter((x) => user.role !== 'student' || !examsLock(user.id, x.course_id));
     for (const x of exams) {
       const c = byId.get(x.course_id);
       items.push({ type: 'exam', id: `x${x.id}`, title: `امتحان ${EXAM_KINDS[x.kind]} ${c.name}`, date: x.exam_date,

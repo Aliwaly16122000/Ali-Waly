@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db.js';
+import { gradesLock, gradesHiddenByDoctor } from '../lib/visibility.js';
 import { assertCurrentTerm } from '../lib/term.js';
 import { ah, parse, badRequest, forbidden, notFound, toId } from '../lib/http.js';
 import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
@@ -40,7 +41,8 @@ courseAssessments.get('/', (req, res) => {
       FROM assessments a
       LEFT JOIN submissions s ON s.assessment_id = a.id AND s.student_id = ?
       WHERE a.course_id = ? ORDER BY COALESCE(a.due_at, a.created_at) DESC`).all(req.user.id, courseId);
-    return res.json(rows);
+    const lock = gradesLock(req.user.id, courseId);
+    return res.json(lock ? rows.map((r) => ({ ...r, score: null, feedback: null, grades_lock: r.status === 'published' ? lock : null })) : rows);
   }
 
   res.json(db.prepare(`
@@ -116,10 +118,12 @@ router.get('/:id', (req, res) => {
 
   if (role === 'student') {
     const s = db.prepare('SELECT * FROM submissions WHERE assessment_id = ? AND student_id = ?').get(a.id, req.user.id);
-    const visible = a.status === 'published';
+    const lock = a.status === 'published' ? gradesLock(req.user.id, course) : null;
+    const visible = a.status === 'published' && !lock;
     return res.json({
       ...base,
       review_note: undefined,
+      grades_lock: lock,
       submission: s ? {
         id: s.id, file_name: s.file_name, file_size: s.file_size, note: s.note, submitted_at: s.submitted_at,
         score: visible ? s.score : null, feedback: visible ? s.feedback : null, graded: s.score !== null,
@@ -334,7 +338,8 @@ router.post('/:id/publish', (req, res) => {
   if (a.status === 'published') throw badRequest('الدرجات منشورة بالفعل');
   db.prepare("UPDATE assessments SET status = 'published', published_at = ? WHERE id = ?").run(nowIso(), a.id);
   logStatus(a, 'publish', req.user.id);
-  notify(courseStudentIds(a.course_id), {
+  // Grades the doctor has hidden stay quiet; students are told when they're revealed.
+  if (!gradesHiddenByDoctor(course)) notify(courseStudentIds(a.course_id), {
     type: 'grades_published',
     title: `نزلت درجات ${a.title}`,
     body: course.name,

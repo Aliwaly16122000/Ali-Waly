@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
+import { gradesLock } from '../lib/visibility.js';
+import { pendingSurveys } from './surveys.js';
 import { ACCEPTING_SQL } from './assessments.js';
 import { termFilter } from '../lib/term.js';
 
@@ -23,7 +25,8 @@ router.get('/', (req, res) => {
       FROM enrollments e JOIN assessments a ON a.course_id = e.course_id AND a.status = 'published'
       JOIN courses c ON c.id = a.course_id
       LEFT JOIN submissions s ON s.assessment_id = a.id AND s.student_id = e.student_id
-      WHERE e.student_id = ? ORDER BY a.published_at DESC LIMIT 6`).all(user.id);
+      WHERE e.student_id = ? ORDER BY a.published_at DESC LIMIT 12`).all(user.id)
+      .filter((g) => !gradesLock(user.id, g.course_id)).slice(0, 6);
     const att = db.prepare(`
       SELECT COUNT(s.id) AS total, COUNT(r.session_id) AS attended
       FROM enrollments e JOIN courses c ON c.id = e.course_id JOIN attendance_sessions s ON s.course_id = e.course_id
@@ -42,7 +45,7 @@ router.get('/', (req, res) => {
     const courses = db.prepare(`SELECT COUNT(*) FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE e.student_id = ? AND ${tf.sql}`)
       .pluck().get(user.id, ...tf.params);
     return res.json({
-      courses, pending, recent_grades: recentGrades, active_sessions: activeSessions, announcements,
+      courses, pending, recent_grades: recentGrades, pending_surveys: pendingSurveys(user.id), active_sessions: activeSessions, announcements,
       attendance: { ...att, rate: att.total ? Math.round((att.attended / att.total) * 1000) / 10 : null },
     });
   }

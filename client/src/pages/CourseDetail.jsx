@@ -15,6 +15,8 @@ import Attendance from './course/Attendance';
 import Stats from './course/Stats';
 import Students from './course/Students';
 import Schedule from './course/Schedule';
+import GradeVisibility from './course/GradeVisibility';
+import CourseSurveys from './course/CourseSurveys';
 
 export default function CourseDetail() {
   const { id } = useParams();
@@ -91,10 +93,15 @@ export default function CourseDetail() {
         {tab === 'assessments' && <Assessments course={course} />}
         {tab === 'announcements' && <Posts course={course} type="announcement" />}
         {tab === 'materials' && <Posts course={course} type="material" />}
-        {tab === 'grades' && (staff ? <Gradebook course={course} /> : <StudentGrades course={course} />)}
+        {tab === 'grades' && (staff ? (
+          <>
+            {['doctor', 'admin'].includes(role) && <GradeVisibility course={course} onChanged={() => reload(true)} />}
+            <Gradebook course={course} />
+          </>
+        ) : <StudentGrades course={course} />)}
         {tab === 'attendance' && <Attendance course={course} />}
         {tab === 'schedule' && <Schedule course={course} />}
-        {tab === 'stats' && <Stats course={course} />}
+        {tab === 'stats' && <><Stats course={course} /><CourseSurveys course={course} /></>}
         {tab === 'students' && <Students course={course} onMessage={message} />}
       </div>
     </>

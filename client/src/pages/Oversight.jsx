@@ -30,7 +30,7 @@ function Summary({ d, unitLabel }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       <StatCard icon={Users} label="الطلاب" value={d.students ?? '—'} />
-      <StatCard icon={Library} label={unitLabel} value={d.courses ?? d.departments ?? '—'} tone="violet" />
+      <StatCard icon={Library} label={unitLabel} value={(Array.isArray(d.courses) ? d.courses.length : d.courses) ?? d.departments ?? '—'} tone="violet" />
       <StatCard icon={GraduationCap} label="متوسط الدرجات" value={d.avg === null ? '—' : `${num(d.avg, 0)}%`} hint={d.pass_rate === null ? '' : `نسبة النجاح ${num(d.pass_rate, 0)}%`} tone={pctTone(d.avg)} />
       <StatCard icon={CheckCircle2} label="متوسط الحضور" value={d.attendance === null ? '—' : `${num(d.attendance, 0)}%`} tone={pctTone(d.attendance)} />
       <StatCard icon={AlertTriangle} label="مواد محتاجة متابعة" value={(d.critical || 0) + (d.warning || 0)} hint={d.critical ? `${d.critical} حرجة` : 'لا يوجد حرج'} tone={d.critical ? 'red' : d.warning ? 'amber' : 'green'} />

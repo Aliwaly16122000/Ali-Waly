@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, QrCode, MessagesSquare, Bell, Building2, Users, Library, LogOut,
-  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList, Landmark, Gauge,
+  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList, Landmark, Gauge, ClipboardCheck,
 } from 'lucide-react';
 import { Logo, BrandTitle } from '../context/BrandingContext';
 import HeaderClock from './HeaderClock';
@@ -29,6 +29,7 @@ function navFor(role, user) {
       { to: '/admin/courses', label: 'المواد والتسجيل', icon: Library },
       { to: '/admin/exams', label: 'جدول الامتحانات', icon: ClipboardList },
       { to: '/calendar', label: 'التقويم الأكاديمي', icon: CalendarRange },
+      { to: '/admin/surveys', label: 'الاستبيانات', icon: ClipboardCheck },
       { to: '/admin/broadcast', label: 'إعلانات الكلية', icon: Megaphone },
       { to: '/admin/system', label: 'إعدادات الكلية', icon: DatabaseBackup },
       { to: '/courses', label: 'استعراض المواد', icon: BookOpen },
@@ -39,7 +40,7 @@ function navFor(role, user) {
     { to: '/schedule', label: 'جدولي', icon: CalendarDays },
     { to: '/calendar', label: 'التقويم', icon: CalendarRange },
     { to: '/exams', label: role === 'student' ? 'امتحاناتي' : 'الامتحانات', icon: ClipboardList },
-    ...(role === 'student' ? [{ to: '/scan', label: 'تسجيل الحضور', icon: QrCode }] : []),
+    ...(role === 'student' ? [{ to: '/scan', label: 'تسجيل الحضور', icon: QrCode }, { to: '/surveys', label: 'الاستبيانات', icon: ClipboardCheck }] : []),
     { to: '/chat', label: 'المحادثات', icon: MessagesSquare, badge: 'messages' },
     { to: '/notifications', label: 'الإشعارات', icon: Bell, badge: 'notifications' },
   ];
