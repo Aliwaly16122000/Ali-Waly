@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QrCode, Play, CalendarCheck, CheckCircle2, XCircle, Radio, ChevronDown, ChevronUp, MapPin, Crosshair, Smartphone, Trash2 } from 'lucide-react';
 import { getLocation } from '../../lib/device';
+import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
@@ -117,7 +118,8 @@ function StaffAttendance({ course, data, reload }) {
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [deleting, setDeleting] = useState(null);
-  const canDelete = ['doctor', 'admin'].includes(course.my_role);
+  const { user } = useAuth();
+  const canDelete = (session) => ['doctor', 'admin'].includes(course.my_role) || (course.my_role === 'ta' && session.created_by === user.id);
   const removeSession = async () => {
     try {
       await api.del(`/attendance/${deleting.id}`);
@@ -188,12 +190,12 @@ function StaffAttendance({ course, data, reload }) {
             </button>
             {expanded === s.id && (
               <div className="bg-surface-2/50 border-t border-line">
-                <SessionRoster sessionId={s.id} readOnly={readOnly} onChanged={() => reload(true)} />
-                {canDelete && (
-                  <div className="flex justify-end px-5 py-3 border-t border-line">
+                {canDelete(s) && (
+                  <div className="flex justify-end px-5 py-2 border-b border-line">
                     <Button size="sm" variant="ghost" icon={Trash2} className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => setDeleting(s)}>حذف المحاضرة دي</Button>
                   </div>
                 )}
+                <SessionRoster sessionId={s.id} readOnly={readOnly} onChanged={() => reload(true)} />
               </div>
             )}
           </div>

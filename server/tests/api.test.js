@@ -145,6 +145,15 @@ test('attendance: rotating code, device binding and one device per student', asy
   assert.equal((await student.post('/attendance/scan', { code: code2, device_id: 'device-student-one-NEW1' })).status, 200);
 });
 
+test('attendance: a TA deletes only sessions they opened; the doctor deletes any', async () => {
+  const mine = (await ta.post('/courses/1/attendance', { title: 'تجربة معيد', duration_minutes: 5 })).data.id;
+  const doctors = (await doctor.post('/courses/1/attendance', { title: 'محاضرة دكتور', duration_minutes: 5 })).data.id;
+  assert.equal((await ta.del(`/attendance/${doctors}`)).status, 403);
+  assert.equal((await ta.del(`/attendance/${mine}`)).status, 200);
+  assert.equal((await doctor.del(`/attendance/${doctors}`)).status, 200);
+  assert.equal((await student.del(`/attendance/${doctors}`)).status, 404);
+});
+
 test('attendance: optional geofence asks for location and rejects far-away phones', async () => {
   assert.equal((await doctor.put('/courses/1/attendance-settings', { geo_enabled: true, geo_lat: 30.0266, geo_lng: 31.2105, geo_radius: 200 })).status, 200);
   const { id } = (await doctor.post('/courses/1/attendance', { title: 'موقع' })).data;
