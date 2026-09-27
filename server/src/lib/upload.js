@@ -17,17 +17,20 @@ const storage = multer.diskStorage({
   },
 });
 
-export const upload = multer({
-  storage,
-  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    // Browsers send multipart filenames as latin1; restore UTF-8 so Arabic names survive.
-    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (BLOCKED_EXT.has(ext)) return cb(badRequest('نوع الملف غير مسموح'));
-    cb(null, true);
-  },
-});
+export const MAX_FILES = 10;
+
+const fileFilter = (_req, file, cb) => {
+  // Browsers send multipart filenames as latin1; restore UTF-8 so Arabic names survive.
+  file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (BLOCKED_EXT.has(ext)) return cb(badRequest('نوع الملف غير مسموح'));
+  cb(null, true);
+};
+
+export const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 1 }, fileFilter });
+
+/** Several files in one field (lecture notes, assignment sheets). */
+export const uploadMany = multer({ storage, limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: MAX_FILES }, fileFilter });
 
 export const storedName = (file) => (file ? path.basename(file.path) : null);
 

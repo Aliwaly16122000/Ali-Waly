@@ -5,7 +5,8 @@ import { gradesLock, gradesHiddenByDoctor } from '../lib/visibility.js';
 import { assertCurrentTerm } from '../lib/term.js';
 import { ah, parse, badRequest, forbidden, notFound, toId } from '../lib/http.js';
 import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
-import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
+import { upload, uploadMany, MAX_FILES, storedName, removeUpload, sendUpload } from '../lib/upload.js';
+import { attachmentsFor, discardUploads, removeAttachments, saveAttachments } from '../lib/attachments.js';
 import { notify } from '../lib/notify.js';
 import { nowIso } from '../lib/time.js';
 
@@ -22,9 +23,15 @@ const withUploadCleanup = (req, fn) => {
   try {
     return fn();
   } catch (err) {
-    removeUpload(storedName(req.file));
+    discardUploads(req);
     throw err;
   }
+};
+
+/** Adds each assessment's attachments ([{ id, name, size }]) and drops the legacy file columns. */
+const withAttachments = (rows) => {
+  const files = attachmentsFor('assessment', rows.map((r) => r.id));
+  return rows.map(({ attachment_path, attachment_name, ...r }) => ({ ...r, attachments: files.get(r.id) }));
 };
 
 courseAssessments.get('/', (req, res) => {
@@ -34,7 +41,7 @@ courseAssessments.get('/', (req, res) => {
   if (role === 'student') {
     const rows = db.prepare(`
       SELECT a.id, a.course_id, a.title, a.type, a.description, a.max_score, a.due_at, a.accepts_submissions, a.late_policy, a.grace_hours,
-             a.attachment_name, a.status, a.created_at, a.published_at,
+             a.status, a.created_at, a.published_at,
              s.id AS submission_id, s.file_name, s.submitted_at, s.note,
              CASE WHEN a.status = 'published' THEN s.score END AS score,
              CASE WHEN a.status = 'published' THEN s.feedback END AS feedback
@@ -42,18 +49,18 @@ courseAssessments.get('/', (req, res) => {
       LEFT JOIN submissions s ON s.assessment_id = a.id AND s.student_id = ?
       WHERE a.course_id = ? ORDER BY COALESCE(a.due_at, a.created_at) DESC`).all(req.user.id, courseId);
     const lock = gradesLock(req.user.id, courseId);
-    return res.json(lock ? rows.map((r) => ({ ...r, score: null, feedback: null, grades_lock: r.status === 'published' ? lock : null })) : rows);
+    const list = withAttachments(rows);
+    return res.json(lock ? list.map((r) => ({ ...r, score: null, feedback: null, grades_lock: r.status === 'published' ? lock : null })) : list);
   }
 
-  res.json(db.prepare(`
+  res.json(withAttachments(db.prepare(`
     SELECT a.*, u.name AS created_by_name, sb.name AS submitted_by_name,
       (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = a.course_id) AS students_count,
       (SELECT COUNT(*) FROM submissions s WHERE s.assessment_id = a.id AND s.submitted_at IS NOT NULL) AS submitted_count,
       (SELECT COUNT(*) FROM submissions s WHERE s.assessment_id = a.id AND s.score IS NOT NULL) AS graded_count,
       (SELECT AVG(s.score) FROM submissions s WHERE s.assessment_id = a.id AND s.score IS NOT NULL) AS avg_score
     FROM assessments a LEFT JOIN users u ON u.id = a.created_by LEFT JOIN users sb ON sb.id = a.submitted_by
-    WHERE a.course_id = ? ORDER BY COALESCE(a.due_at, a.created_at) DESC`).all(courseId)
-    .map(({ attachment_path, ...a }) => a));
+    WHERE a.course_id = ? ORDER BY COALESCE(a.due_at, a.created_at) DESC`).all(courseId)));
 });
 
 const assessmentSchema = z.object({
@@ -79,7 +86,7 @@ export function submissionDeadline(a) {
   return new Date(a.late_policy === 'grace' ? due + a.grace_hours * 3600_000 : due);
 }
 
-courseAssessments.post('/', upload.single('attachment'), (req, res) => {
+courseAssessments.post('/', uploadMany.array('attachments', MAX_FILES), (req, res) => {
   const courseId = toId(req.params.courseId);
   const { a, course } = withUploadCleanup(req, () => {
     const { course } = courseAccess(req.user, courseId, ['doctor', 'ta']);
@@ -89,10 +96,11 @@ courseAssessments.post('/', upload.single('attachment'), (req, res) => {
   const dueAt = a.due_at ? new Date(a.due_at).toISOString() : null;
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO assessments (course_id, title, type, description, max_score, due_at, accepts_submissions,
-                             attachment_path, attachment_name, created_by, late_policy, grace_hours)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(courseId, a.title, a.type, a.description || null, a.max_score, dueAt,
-    Number(a.accepts_submissions), storedName(req.file), req.file?.originalname ?? null, req.user.id, a.late_policy, a.grace_hours);
+                             created_by, late_policy, grace_hours)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(courseId, a.title, a.type, a.description || null, a.max_score, dueAt,
+    Number(a.accepts_submissions), req.user.id, a.late_policy, a.grace_hours);
   const id = Number(lastInsertRowid);
+  saveAttachments('assessment', id, req.files);
 
   const due = dueAt ? ` - التسليم حتى ${new Date(dueAt).toLocaleString('ar-EG-u-nu-latn', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' })}` : '';
   notify(courseStudentIds(courseId), {
@@ -113,7 +121,7 @@ function loadAssessment(req, allowed) {
 
 router.get('/:id', (req, res) => {
   const { a, course, role } = loadAssessment(req);
-  const { attachment_path, ...assessment } = a;
+  const [assessment] = withAttachments([a]);
   const base = { ...assessment, course_name: course.name, course_code: course.code, my_role: role };
 
   if (role === 'student') {
@@ -142,20 +150,21 @@ router.get('/:id', (req, res) => {
   res.json({ ...base, roster });
 });
 
-router.put('/:id', upload.single('attachment'), (req, res) => {
-  const { a: current, data } = withUploadCleanup(req, () => {
+router.put('/:id', uploadMany.array('attachments', MAX_FILES), (req, res) => {
+  const { a: current, data, removeIds } = withUploadCleanup(req, () => {
     const { a } = loadAssessment(req, ['doctor', 'ta']);
-    return { a, data: parse(assessmentSchema, req.body) };
+    // remove_attachments: ids of existing files to delete, sent as a comma-separated list
+    const removeIds = String(req.body.remove_attachments || '').split(',').map(Number).filter(Number.isInteger).filter((n) => n > 0);
+    return { a, data: parse(assessmentSchema, req.body), removeIds };
   });
   const dueAt = data.due_at ? new Date(data.due_at).toISOString() : null;
   db.prepare(`
     UPDATE assessments SET title = ?, type = ?, description = ?, max_score = ?, due_at = ?, accepts_submissions = ?,
-      attachment_path = COALESCE(?, attachment_path), attachment_name = COALESCE(?, attachment_name),
       late_policy = ?, grace_hours = ?, reminded_at = CASE WHEN due_at IS ? THEN reminded_at ELSE NULL END
     WHERE id = ?`).run(data.title, data.type, data.description || null, data.max_score, dueAt,
-    Number(data.accepts_submissions), storedName(req.file), req.file?.originalname ?? null,
-    data.late_policy, data.grace_hours, dueAt, current.id);
-  if (req.file) removeUpload(current.attachment_path);
+    Number(data.accepts_submissions), data.late_policy, data.grace_hours, dueAt, current.id);
+  if (removeIds.length) removeAttachments('assessment', current.id, removeIds);
+  saveAttachments('assessment', current.id, req.files);
   res.json({ ok: true });
 });
 
@@ -164,13 +173,9 @@ router.delete('/:id', (req, res) => {
   if (role === 'ta' && a.status !== 'open') throw forbidden('لا يمكن حذف تقييم تم رفعه للدكتور');
   const files = db.prepare('SELECT file_path FROM submissions WHERE assessment_id = ?').pluck().all(a.id);
   db.prepare('DELETE FROM assessments WHERE id = ?').run(a.id);
-  [a.attachment_path, ...files].forEach(removeUpload);
+  files.forEach(removeUpload);
+  removeAttachments('assessment', a.id);
   res.json({ ok: true });
-});
-
-router.get('/:id/attachment', (req, res) => {
-  const { a } = loadAssessment(req);
-  sendUpload(res, a.attachment_path, a.attachment_name);
 });
 
 // ───────────── Student submission ─────────────

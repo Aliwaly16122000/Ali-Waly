@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ChevronRight, Download, FileText, Upload, CheckCircle2, Send, Award, Undo2, Pencil, Trash2, Save, Search,
+  ChevronRight, Download, Upload, CheckCircle2, Send, Award, Undo2, Pencil, Trash2, Save, Search,
   AlertTriangle, Clock, Paperclip, Users, PenLine, BarChart3, Check, EyeOff, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,7 +9,7 @@ import { api, toForm } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { STATUS_META, TYPE_LABELS, dueInfo, fileSize, fmtDateTime, num, pctTone, timeAgo } from '../lib/format';
 import {
-  Alert, Badge, Button, Card, CardHeader, ConfirmModal, EmptyState, ErrorState, Field, FileDrop, Input, Modal,
+  Alert, AttachmentLinks, Badge, Button, Card, CardHeader, ConfirmModal, EmptyState, ErrorState, Field, FileDrop, Input, Modal,
   PageLoader, Select, Spinner, Table, Td, Textarea, Th, cx,
 } from '../components/ui';
 import AssessmentForm from './course/AssessmentForm';
@@ -65,16 +65,12 @@ function Header({ a, courseId, children }) {
 }
 
 function Instructions({ a }) {
-  if (!a.description && !a.attachment_name) return null;
+  if (!a.description && !a.attachments?.length) return null;
   return (
     <Card className="p-5">
       <p className="font-bold mb-2">التعليمات</p>
       {a.description && <p className="whitespace-pre-line text-ink/85 leading-relaxed">{a.description}</p>}
-      {a.attachment_name && (
-        <a href={`/api/assessments/${a.id}/attachment`} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-4 py-2.5 text-sm font-semibold hover:border-brand-300">
-          <FileText className="size-4 text-brand-500" /> {a.attachment_name} <Download className="size-4 text-muted" />
-        </a>
-      )}
+      <AttachmentLinks attachments={a.attachments} className="mt-4" />
     </Card>
   );
 }

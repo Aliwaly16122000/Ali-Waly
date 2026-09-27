@@ -43,7 +43,8 @@ export function toForm(obj) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(obj)) {
     if (v === undefined || v === null || v === '') continue;
-    fd.append(k, v);
+    if (Array.isArray(v)) v.forEach((item) => fd.append(k, item)); // several files under one field
+    else fd.append(k, v);
   }
   return fd;
 }

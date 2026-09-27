@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { api, toForm } from '../../lib/api';
 import { TYPE_LABELS } from '../../lib/format';
-import { Button, Field, FileDrop, Input, Modal, Select, Textarea } from '../../components/ui';
+import { Button, Field, FilesDrop, Input, Modal, Select, Textarea } from '../../components/ui';
 
 const toLocalInput = (iso) => {
   if (!iso) return '';
@@ -23,7 +23,8 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
     late_policy: initial?.late_policy ?? 'allow',
     grace_hours: initial?.grace_hours ?? 24,
     description: initial?.description ?? '',
-    attachment: null,
+    attachments: [],
+    removed: [],
   }));
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
@@ -36,7 +37,8 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
         title: form.title, type: form.type, max_score: form.max_score, description: form.description,
         due_at: form.due_at ? new Date(form.due_at).toISOString() : '', accepts_submissions: String(form.accepts_submissions),
         late_policy: form.late_policy, grace_hours: form.late_policy === 'grace' ? form.grace_hours : '0',
-        attachment: form.attachment,
+        attachments: form.attachments,
+        remove_attachments: form.removed.join(','),
       });
       if (!form.due_at) body.append('due_at', '');
       const res = editing ? await api.put(`/assessments/${initial.id}`, body) : await api.post(`/courses/${courseId}/assessments`, body);
@@ -87,8 +89,10 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
           </>
         )}
         <Field label="التعليمات" className="sm:col-span-2">{(id) => <Textarea id={id} value={form.description} onChange={set('description')} placeholder="حل المسائل 1-8 من الفصل الخامس…" />}</Field>
-        <Field label="ملف الشيت (اختياري)" className="sm:col-span-2">
-          <FileDrop file={form.attachment} onChange={(attachment) => setForm({ ...form, attachment })} hint={initial?.attachment_name ? `الملف الحالي: ${initial.attachment_name}` : 'PDF أو صورة'} />
+        <Field label="ملفات الشيت (اختياري)" className="sm:col-span-2">
+          <FilesDrop files={form.attachments} onChange={(attachments) => setForm({ ...form, attachments })} hint="PDF أو صور"
+            existing={(initial?.attachments || []).filter((a) => !form.removed.includes(a.id))}
+            onRemoveExisting={(id) => setForm({ ...form, removed: [...form.removed, id] })} />
         </Field>
       </form>
     </Modal>

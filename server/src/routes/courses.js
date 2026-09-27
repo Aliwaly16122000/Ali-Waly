@@ -6,7 +6,8 @@ import { ACCEPTING_SQL } from './assessments.js';
 import { isArchived, listTerms, termFilter, termInfo } from '../lib/term.js';
 import { ah, parse, notFound, forbidden, toId } from '../lib/http.js';
 import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
-import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
+import { uploadMany, MAX_FILES } from '../lib/upload.js';
+import { attachmentsFor, discardUploads, removeAttachments, saveAttachments } from '../lib/attachments.js';
 import { notify } from '../lib/notify.js';
 
 const router = Router();
@@ -127,31 +128,34 @@ router.put('/:id/attendance-settings', (req, res) => {
 router.get('/:id/posts', (req, res) => {
   const id = toId(req.params.id);
   courseAccess(req.user, id);
-  res.json(db.prepare(`
-    SELECT p.id, p.course_id, p.type, p.title, p.body, p.file_name, p.created_at, p.author_id,
+  const posts = db.prepare(`
+    SELECT p.id, p.course_id, p.type, p.title, p.body, p.created_at, p.author_id,
            u.name AS author_name, cs.role AS author_role
     FROM posts p LEFT JOIN users u ON u.id = p.author_id
     LEFT JOIN course_staff cs ON cs.course_id = p.course_id AND cs.user_id = p.author_id
-    WHERE p.course_id = ? ORDER BY p.created_at DESC`).all(id));
+    WHERE p.course_id = ? ORDER BY p.created_at DESC`).all(id);
+  const files = attachmentsFor('post', posts.map((p) => p.id));
+  res.json(posts.map((p) => ({ ...p, attachments: files.get(p.id) })));
 });
 
-router.post('/:id/posts', upload.single('file'), ah(async (req, res) => {
+router.post('/:id/posts', uploadMany.array('files', MAX_FILES), ah(async (req, res) => {
   const id = toId(req.params.id);
   let course;
+  let p;
   try {
     ({ course } = courseAccess(req.user, id, ['doctor', 'ta']));
+    p = parse(z.object({
+      type: z.enum(['announcement', 'material']).default('announcement'),
+      title: z.string().trim().min(2, 'العنوان مطلوب').max(200),
+      body: z.string().trim().max(10000).optional(),
+    }), req.body);
   } catch (err) {
-    removeUpload(storedName(req.file));
+    discardUploads(req);
     throw err;
   }
-  const p = parse(z.object({
-    type: z.enum(['announcement', 'material']).default('announcement'),
-    title: z.string().trim().min(2, 'العنوان مطلوب').max(200),
-    body: z.string().trim().max(10000).optional(),
-  }), req.body);
-  const { lastInsertRowid } = db.prepare(`
-    INSERT INTO posts (course_id, author_id, type, title, body, file_path, file_name) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, req.user.id, p.type, p.title, p.body || null, storedName(req.file), req.file?.originalname ?? null);
+  const { lastInsertRowid } = db.prepare('INSERT INTO posts (course_id, author_id, type, title, body) VALUES (?, ?, ?, ?, ?)')
+    .run(id, req.user.id, p.type, p.title, p.body || null);
+  saveAttachments('post', Number(lastInsertRowid), req.files);
 
   const recipients = [...courseStudentIds(id), ...courseStaffIds(id)].filter((uid) => uid !== req.user.id);
   notify(recipients, {
@@ -174,20 +178,13 @@ export function announceGrades(course) {
 
 export const postsRouter = Router();
 
-postsRouter.get('/:id/file', (req, res) => {
-  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(toId(req.params.id));
-  if (!post) throw notFound();
-  courseAccess(req.user, post.course_id);
-  sendUpload(res, post.file_path, post.file_name);
-});
-
 postsRouter.delete('/:id', (req, res) => {
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(toId(req.params.id));
   if (!post) throw notFound();
   const { role } = courseAccess(req.user, post.course_id, ['doctor', 'ta']);
   if (role === 'ta' && post.author_id !== req.user.id) throw forbidden('يمكنك حذف منشوراتك فقط');
   db.prepare('DELETE FROM posts WHERE id = ?').run(post.id);
-  removeUpload(post.file_path);
+  removeAttachments('post', post.id);
   res.json({ ok: true });
 });
 

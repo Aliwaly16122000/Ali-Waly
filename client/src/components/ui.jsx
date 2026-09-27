@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Loader2, X, Inbox, UploadCloud, FileText, AlertTriangle } from 'lucide-react';
+import { Loader2, X, Inbox, UploadCloud, FileText, AlertTriangle, Paperclip, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import { fileSize } from '../lib/format';
 
 /** clsx + tailwind-merge, so a caller's `w-36` overrides a component's default `w-full`. */
@@ -222,6 +223,69 @@ export const Textarea = forwardRef(function Textarea({ className, ...props }, re
 export const Select = forwardRef(function Select({ className, children, ...props }, ref) {
   return <select ref={ref} className={cx(inputCls, 'h-10 pe-8', className)} {...props}>{children}</select>;
 });
+
+/**
+ * Pick several files (up to `max`): new ones are listed and removable, and files already saved
+ * (`existing`, [{ id, name, size }]) can be marked for removal with onRemoveExisting.
+ */
+export function FilesDrop({ files, onChange, existing = [], onRemoveExisting, accept, max = 10, hint }) {
+  const [drag, setDrag] = useState(false);
+  const input = useRef(null);
+  const add = (list) => {
+    const next = [...files, ...Array.from(list || [])];
+    if (next.length + existing.length > max) toast.error(`أقصى عدد ${max} ملفات`);
+    onChange(next.slice(0, Math.max(0, max - existing.length)));
+  };
+  const row = (name, size, onRemove, key) => (
+    <div key={key} className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2">
+      <FileText className="size-5 text-brand-500 shrink-0" />
+      <div className="flex-1 min-w-0 text-right">
+        <p className="font-semibold text-sm text-ink truncate">{name}</p>
+        {size != null && <p className="text-xs text-muted">{fileSize(size)}</p>}
+      </div>
+      <button type="button" className="p-1 rounded-lg hover:bg-surface-2 text-muted hover:text-rose-600" onClick={onRemove} aria-label="إزالة"><X className="size-4" /></button>
+    </div>
+  );
+  return (
+    <div className="space-y-2">
+      {existing.map((f) => row(f.name, f.size, () => onRemoveExisting?.(f.id), `e${f.id}`))}
+      {files.map((f, i) => row(f.name, f.size, () => onChange(files.filter((_, j) => j !== i)), `n${i}-${f.name}`))}
+      {files.length + existing.length < max && (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); add(e.dataTransfer.files); }}
+          onClick={() => input.current?.click()}
+          className={cx(
+            'cursor-pointer rounded-2xl border-2 border-dashed p-5 text-center transition-colors',
+            drag ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10' : 'border-line hover:border-brand-300 bg-surface-2',
+          )}
+        >
+          <input ref={input} type="file" hidden multiple accept={accept} onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
+          <UploadCloud className="size-8 mx-auto text-brand-500 mb-1.5" />
+          <p className="font-semibold text-ink">{files.length + existing.length ? 'إضافة ملفات تانية' : 'اسحب الملفات هنا أو اضغط للاختيار'}</p>
+          <p className="text-xs text-muted mt-1">{hint ? `${hint} · ` : ''}تقدر تختار أكتر من ملف (حتى {max})</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Download links for attachments ([{ id, name, size }]). */
+export function AttachmentLinks({ attachments, className }) {
+  if (!attachments?.length) return null;
+  return (
+    <div className={cx('flex flex-wrap gap-2', className)}>
+      {attachments.map((a) => (
+        <a key={a.id} href={`/api/attachments/${a.id}`} className="inline-flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-semibold hover:border-brand-300 max-w-full">
+          <Paperclip className="size-4 text-brand-500 shrink-0" /> <span className="truncate max-w-64">{a.name}</span>
+          {a.size != null && <span className="text-xs text-muted font-normal shrink-0">{fileSize(a.size)}</span>}
+          <Download className="size-4 text-muted shrink-0" />
+        </a>
+      ))}
+    </div>
+  );
+}
 
 export function FileDrop({ file, onChange, accept, label = 'اسحب الملف هنا أو اضغط للاختيار', hint }) {
   const [drag, setDrag] = useState(false);
