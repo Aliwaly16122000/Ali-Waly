@@ -14,6 +14,7 @@ import { startScheduler } from './lib/scheduler.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import courseRoutes, { postsRouter } from './routes/courses.js';
+import { attachmentsRouter } from './lib/attachments.js';
 import assessmentRoutes, { courseAssessments, submissionsRouter } from './routes/assessments.js';
 import gradeRoutes from './routes/grades.js';
 import attendanceRoutes, { courseAttendance } from './routes/attendance.js';
@@ -60,6 +61,7 @@ api.use('/courses/:courseId/schedule', courseSchedule);
 api.use('/courses/:courseId', gradeRoutes);
 api.use('/courses', courseRoutes);
 api.use('/posts', postsRouter);
+api.use('/attachments', attachmentsRouter);
 api.use('/assessments', assessmentRoutes);
 api.use('/submissions', submissionsRouter);
 api.use('/attendance', attendanceRoutes);
@@ -83,7 +85,8 @@ if (fs.existsSync(CLIENT_DIST)) {
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   if (err instanceof multer.MulterError) {
-    const msg = err.code === 'LIMIT_FILE_SIZE' ? `حجم الملف أكبر من ${MAX_UPLOAD_MB} ميجا` : 'خطأ في رفع الملف';
+    const msg = err.code === 'LIMIT_FILE_SIZE' ? `حجم الملف أكبر من ${MAX_UPLOAD_MB} ميجا`
+      : err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE' ? 'عدد الملفات أكتر من المسموح (10 ملفات بحد أقصى)' : 'خطأ في رفع الملف';
     return res.status(400).json({ error: msg });
   }
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'بيانات غير صالحة' });

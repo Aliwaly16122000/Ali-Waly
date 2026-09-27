@@ -105,6 +105,38 @@ test('grading scheme: the same assessment cannot be counted twice', async () => 
   assert.equal(r.status, 400);
 });
 
+test('attachments: lecture notes and sheets take several files, students download them, edits add and remove', async () => {
+  const blob = () => new Blob(['%PDF-1.4 test'], { type: 'application/pdf' });
+  const files = (names) => { const f = new FormData(); names.forEach((n) => f.append('files', blob(), n)); return f; };
+  const fd = files(['محاضرة 1.pdf', 'محاضرة 1 - جزء 2.pdf']);
+  fd.append('type', 'material'); fd.append('title', 'ملفات المحاضرة الأولى');
+  const post = await doctor.post('/courses/1/posts', fd);
+  assert.equal(post.status, 201, JSON.stringify(post.data));
+  const listed = (await student.get('/courses/1/posts')).data.find((p) => p.id === post.data.id);
+  assert.deepEqual(listed.attachments.map((a) => a.name), ['محاضرة 1.pdf', 'محاضرة 1 - جزء 2.pdf']);
+  assert.equal((await student.get(`/attachments/${listed.attachments[1].id}`)).status, 200);
+  assert.equal((await otherStudent.get(`/attachments/${listed.attachments[1].id}`)).status, 403);
+
+  const af = new FormData();
+  ['شيت 1.pdf', 'جدول.pdf'].forEach((n) => af.append('attachments', blob(), n));
+  af.append('title', 'شيت بملفين'); af.append('max_score', '10');
+  const created = await doctor.post('/courses/1/assessments', af);
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const first = (await student.get(`/assessments/${created.data.id}`)).data;
+  assert.equal(first.attachments.length, 2);
+
+  const edit = new FormData();
+  edit.append('attachments', blob(), 'حل.pdf');
+  edit.append('title', 'شيت بملفين'); edit.append('max_score', '10');
+  edit.append('remove_attachments', String(first.attachments[0].id));
+  assert.equal((await doctor.put(`/assessments/${created.data.id}`, edit)).status, 200);
+  assert.deepEqual((await student.get(`/assessments/${created.data.id}`)).data.attachments.map((a) => a.name), ['جدول.pdf', 'حل.pdf']);
+  assert.equal((await student.get(`/attachments/${first.attachments[0].id}`)).status, 404);
+
+  assert.equal((await doctor.del(`/posts/${post.data.id}`)).status, 200);
+  assert.equal((await student.get(`/attachments/${listed.attachments[0].id}`)).status, 404);
+});
+
 test('late policy: closed deadlines reject submissions, grace periods accept them', async () => {
   const due = new Date(Date.now() - 2 * 3600_000).toISOString();
   const make = async (title, extra) => {
@@ -137,21 +169,31 @@ test('attendance: rotating code, device binding and one device per student', asy
   assert.equal((await otherStudent.post('/attendance/scan', { code, device_id: 'device-other-student-01' })).status, 400);
   assert.equal((await student.post('/attendance/scan', { token: `${id}.1.forged`, device_id: 'device-student-one-0001' })).status, 400);
 
-  // same student, new phone → refused until admin unbinds
+  // same student, new phone → refused until admin unbinds (a new class, so the first one is removed)
+  assert.equal((await doctor.del(`/attendance/${id}`)).status, 200);
   const { id: id2 } = (await doctor.post('/courses/1/attendance', { title: 'اختبار 2' })).data;
   const code2 = (await doctor.get(`/attendance/${id2}/token`)).data.code;
   assert.equal((await student.post('/attendance/scan', { code: code2, device_id: 'device-student-one-NEW1' })).data.code, 'device_mismatch');
   assert.equal((await admin.del(`/admin/users/${student.user.id}/device`)).status, 200);
   assert.equal((await student.post('/attendance/scan', { code: code2, device_id: 'device-student-one-NEW1' })).status, 200);
+  await doctor.del(`/attendance/${id2}`);
 });
 
-test('attendance: a TA deletes only sessions they opened; the doctor deletes any', async () => {
-  const mine = (await ta.post('/courses/1/attendance', { title: 'تجربة معيد', duration_minutes: 5 })).data.id;
-  const doctors = (await doctor.post('/courses/1/attendance', { title: 'محاضرة دكتور', duration_minutes: 5 })).data.id;
-  assert.equal((await ta.del(`/attendance/${doctors}`)).status, 403);
-  assert.equal((await ta.del(`/attendance/${mine}`)).status, 200);
-  assert.equal((await doctor.del(`/attendance/${doctors}`)).status, 200);
-  assert.equal((await student.del(`/attendance/${doctors}`)).status, 404);
+test('attendance: one class is one session — opening it again reopens it; deleting follows who opened it', async () => {
+  const first = await ta.post('/courses/1/attendance', { title: 'تجربة معيد', duration_minutes: 5 });
+  assert.equal(first.data.reused, false);
+  await ta.post(`/attendance/${first.data.id}/close`);
+  const again = await doctor.post('/courses/1/attendance', { title: 'محاضرة تانية', duration_minutes: 5 });
+  assert.equal(again.data.id, first.data.id, 'same class today reopens the same session');
+  assert.equal(again.data.reused, true);
+  assert.equal((await doctor.get(`/attendance/${first.data.id}`)).data.active, true);
+
+  assert.equal((await ta.del(`/attendance/${first.data.id}`)).status, 200); // the TA opened it
+  const doctors = (await doctor.post('/courses/1/attendance', { title: 'محاضرة دكتور', duration_minutes: 5 })).data;
+  assert.equal(doctors.reused, false);
+  assert.equal((await ta.del(`/attendance/${doctors.id}`)).status, 403);
+  assert.equal((await student.del(`/attendance/${doctors.id}`)).status, 403);
+  assert.equal((await doctor.del(`/attendance/${doctors.id}`)).status, 200);
 });
 
 test('attendance: optional geofence asks for location and rejects far-away phones', async () => {

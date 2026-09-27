@@ -339,6 +339,20 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 `);
 
+// Files attached to a post (lecture notes, announcements) or an assessment (sheet, assignment).
+db.exec(`
+CREATE TABLE IF NOT EXISTS attachments (
+  id         INTEGER PRIMARY KEY,
+  owner_type TEXT NOT NULL CHECK (owner_type IN ('post','assessment')),
+  owner_id   INTEGER NOT NULL,
+  path       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  size       INTEGER,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_owner ON attachments(owner_type, owner_id);
+`);
+
 // ───────────── Lightweight migrations for databases created by older versions ─────────────
 function addColumn(table, column, definition) {
   const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
@@ -402,5 +416,14 @@ export function setSetting(key, value) {
 }
 
 export const JWT_SECRET = process.env.JWT_SECRET || getSetting('jwt_secret', () => crypto.randomBytes(48).toString('hex'));
+
+// One file per post/assessment used to live on the row itself; move those into attachments.
+db.transaction(() => {
+  for (const [owner, table, pathCol, nameCol] of [['post', 'posts', 'file_path', 'file_name'], ['assessment', 'assessments', 'attachment_path', 'attachment_name']]) {
+    db.prepare(`INSERT INTO attachments (owner_type, owner_id, path, name)
+      SELECT '${owner}', id, ${pathCol}, COALESCE(${nameCol}, ${pathCol}) FROM ${table} WHERE ${pathCol} IS NOT NULL`).run();
+    db.prepare(`UPDATE ${table} SET ${pathCol} = NULL, ${nameCol} = NULL WHERE ${pathCol} IS NOT NULL`).run();
+  }
+})();
 
 export default db;
