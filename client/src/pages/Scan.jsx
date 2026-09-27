@@ -12,7 +12,8 @@ export default function Scan() {
   const video = useRef(null);
   const scanner = useRef(null);
   const busy = useRef(false);
-  const [camera, setCamera] = useState('idle'); // idle | starting | on | denied | unsupported
+  const resumeCamera = useRef(false);
+  const [camera, setCamera] = useState('idle'); // idle | starting | on | denied | unsupported | error
   const [result, setResult] = useState(null); // { ok, message, course }
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -51,6 +52,7 @@ export default function Scan() {
           setLocating(false);
         }
       } else {
+        stopCamera();
         setResult({ ok: false, message: err.message, code: err.data?.code });
       }
     } finally {
@@ -68,23 +70,45 @@ export default function Scan() {
     }
   }, [params, setParams, send]);
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async (retry = true) => {
     setResult(null);
+    // Never run two scanners on one <video>: a leftover one keeps the camera and shows black.
+    scanner.current?.destroy();
+    scanner.current = null;
     if (!(await QrScanner.hasCamera())) return setCamera('unsupported');
     setCamera('starting');
     try {
-      scanner.current = new QrScanner(video.current, (r) => send({ token: r.data }), {
+      const s = new QrScanner(video.current, (r) => send({ token: r.data }), {
         preferredCamera: 'environment', highlightScanRegion: true, highlightCodeOutline: true, maxScansPerSecond: 4,
         returnDetailedScanResult: true,
       });
-      await scanner.current.start();
+      scanner.current = s;
+      await s.start();
       setCamera('on');
-    } catch {
-      setCamera('denied');
+      // Some phones hand back a stream that never shows a frame (black screen): restart it once.
+      setTimeout(() => {
+        if (retry && scanner.current === s && !video.current?.videoWidth) startCamera(false);
+      }, 2500);
+    } catch (err) {
+      setCamera(String(err).includes('NotAllowed') || String(err).includes('Permission') ? 'denied' : 'error');
     }
-  };
+  }, [send]);
 
   useEffect(() => stopCamera, [stopCamera]);
+
+  // Leaving the app (or locking the phone) kills the camera stream; restart it on return.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (scanner.current) { scanner.current.destroy(); scanner.current = null; resumeCamera.current = true; setCamera('idle'); }
+      } else if (resumeCamera.current) {
+        resumeCamera.current = false;
+        startCamera();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [startCamera]);
 
   const submitCode = (e) => {
     e.preventDefault();
@@ -117,7 +141,7 @@ export default function Scan() {
               <p className="text-lg font-bold">لم يتم التسجيل</p>
               <p className="text-muted mt-1">{result.message}</p>
               {result.code === 'device_mismatch' && <p className="text-xs text-muted mt-2 flex items-center justify-center gap-1"><Smartphone className="size-3.5" /> لحماية الحضور، كل حساب مربوط بموبايل واحد.</p>}
-              <Button variant="secondary" icon={RotateCcw} className="mt-4" onClick={startCamera}>حاول مرة أخرى</Button>
+              <Button variant="secondary" icon={RotateCcw} className="mt-4" onClick={() => startCamera()}>حاول مرة أخرى</Button>
             </>
           )}
         </Card>
@@ -125,17 +149,19 @@ export default function Scan() {
 
       <Card className="overflow-hidden mb-6">
         <div className="relative aspect-square bg-slate-950 grid place-items-center">
-          <video ref={video} className={`absolute inset-0 size-full object-cover ${camera === 'on' ? '' : 'hidden'}`} muted playsInline />
+          {/* Kept rendered (just invisible) while starting: phones won't play into a display:none video. */}
+          <video ref={video} className={`absolute inset-0 size-full object-cover ${camera === 'on' ? '' : 'opacity-0 pointer-events-none'}`} muted playsInline autoPlay />
           {camera !== 'on' && (
             <div className="text-center text-white/80 p-8">
               {camera === 'starting' ? <Spinner className="size-10 mx-auto text-white" /> : (
                 <>
-                  {camera === 'denied' || camera === 'unsupported' ? <CameraOff className="size-14 mx-auto mb-3 text-white/60" /> : <QrCode className="size-16 mx-auto mb-3 text-white/60" />}
+                  {camera === 'denied' || camera === 'unsupported' || camera === 'error' ? <CameraOff className="size-14 mx-auto mb-3 text-white/60" /> : <QrCode className="size-16 mx-auto mb-3 text-white/60" />}
                   <p className="mb-5">
                     {camera === 'denied' ? 'لم يتم السماح باستخدام الكاميرا. فعّلها من إعدادات المتصفح أو استخدم الكود.'
+                      : camera === 'error' ? 'الكاميرا مفتحتش — ممكن يكون في تطبيق تاني فاتحها. اقفله وحاول تاني، أو اكتب الكود.'
                       : camera === 'unsupported' ? 'لا توجد كاميرا متاحة، استخدم الكود بالأسفل.' : 'اضغط لفتح الكاميرا ووجّهها للـ QR'}
                   </p>
-                  {camera !== 'unsupported' && <Button icon={Camera} size="lg" onClick={startCamera}>فتح الكاميرا</Button>}
+                  {camera !== 'unsupported' && <Button icon={Camera} size="lg" onClick={() => startCamera()}>{camera === 'error' ? 'حاول تاني' : 'فتح الكاميرا'}</Button>}
                 </>
               )}
             </div>
