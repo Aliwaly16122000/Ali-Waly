@@ -70,7 +70,7 @@ const claimEvent = db.prepare('INSERT OR IGNORE INTO schedule_events (slot_id, d
 
 function slotAudience(slot) {
   const students = slot.section
-    ? db.prepare('SELECT student_id FROM enrollments WHERE course_id = ? AND section = ?').pluck().all(slot.course_id, slot.section)
+    ? db.prepare('SELECT student_id FROM enrollments WHERE course_id = ? AND (section = ? OR section IS NULL)').pluck().all(slot.course_id, slot.section)
     : db.prepare('SELECT student_id FROM enrollments WHERE course_id = ?').pluck().all(slot.course_id);
   const staff = slot.staff_id
     ? [slot.staff_id]

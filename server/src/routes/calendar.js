@@ -81,7 +81,8 @@ router.get('/', (req, res) => {
       SELECT s.*, u.name AS staff_name, u.role AS staff_role FROM course_schedule s LEFT JOIN users u ON u.id = s.staff_id
       WHERE s.course_id IN (${qs})`).all(...ids).filter((s) => {
       const c = byId.get(s.course_id);
-      if (user.role === 'student') return !s.section || s.section === c.my_section;
+      // A student without a section follows every group's slots.
+      if (user.role === 'student') return !s.section || !c.my_section || s.section === c.my_section;
       if (s.staff_id) return s.staff_id === user.id;
       return c.my_role === 'doctor' ? s.kind === 'lecture' : s.kind !== 'lecture';
     });
