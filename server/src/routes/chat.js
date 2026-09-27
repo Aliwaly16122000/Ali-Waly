@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import db from '../db.js';
+import db, { getSetting } from '../db.js';
 import { parse, badRequest, forbidden, notFound, toId } from '../lib/http.js';
 import { canChat } from '../lib/access.js';
 import { upload, storedName, removeUpload, sendUpload } from '../lib/upload.js';
@@ -55,6 +55,27 @@ router.get('/contacts', (req, res) => {
   res.json([...groups.values()]);
 });
 
+/** The admin account that answers الدعم الفني: the one chosen in settings, else the first active admin. */
+export function supportAdminId() {
+  const chosen = Number(getSetting('support_user_id')) || null;
+  const ok = chosen && db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'admin' AND is_active = 1").get(chosen);
+  return ok ? chosen : db.prepare("SELECT id FROM users WHERE role = 'admin' AND is_active = 1 ORDER BY id LIMIT 1").pluck().get() ?? null;
+}
+
+const SUPPORT_NAME = 'الدعم الفني';
+/** To everyone but admins, the admin on the other side of a chat is shown as الدعم الفني. */
+const asSeenBy = (viewer, other) => (viewer.role !== 'admin' && other.role === 'admin' ? { ...other, name: SUPPORT_NAME, support: true } : other);
+
+/** Opens (or reuses) the viewer's conversation with technical support. */
+router.post('/support', (req, res) => {
+  if (req.user.role === 'admin') throw badRequest('انت الدعم الفني 🙂');
+  const adminId = supportAdminId();
+  if (!adminId) throw badRequest('مفيش حساب دعم فني متاح حالياً');
+  const [a, b] = [req.user.id, adminId].sort((x, y) => x - y);
+  db.prepare('INSERT OR IGNORE INTO conversations (user1_id, user2_id, created_at) VALUES (?, ?, ?)').run(a, b, nowIso());
+  res.json({ id: db.prepare('SELECT id FROM conversations WHERE user1_id = ? AND user2_id = ?').pluck().get(a, b) });
+});
+
 router.get('/conversations', (req, res) => {
   const uid = req.user.id;
   const rows = db.prepare(`
@@ -65,7 +86,10 @@ router.get('/conversations', (req, res) => {
     FROM conversations c JOIN users u ON u.id = CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END
     WHERE (c.user1_id = ? OR c.user2_id = ?)
     ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`).all(uid, uid, uid, uid);
-  res.json(rows.map((r) => ({ ...r, online: isOnline(r.other_id) })));
+  res.json(rows.map((r) => {
+    const seen = asSeenBy(req.user, { name: r.other_name, role: r.other_role });
+    return { ...r, other_name: seen.name, support: !!seen.support, online: isOnline(r.other_id) };
+  }));
 });
 
 router.get('/unread-count', (req, res) => {
@@ -100,7 +124,7 @@ router.get('/conversations/:id', (req, res) => {
   const messages = db.prepare(`
     SELECT ${messageColumns} FROM messages WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT 50`)
     .all(c.id, before).reverse();
-  res.json({ id: c.id, other: { ...other, online: isOnline(otherId) }, messages, has_more: messages.length === 50 });
+  res.json({ id: c.id, other: { ...asSeenBy(req.user, other), online: isOnline(otherId) }, messages, has_more: messages.length === 50 });
 });
 
 router.post('/conversations/:id/messages', upload.single('file'), (req, res) => {
@@ -122,12 +146,13 @@ router.post('/conversations/:id/messages', upload.single('file'), (req, res) => 
   db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(now, c.id);
   const message = db.prepare(`SELECT ${messageColumns} FROM messages WHERE id = ?`).get(lastInsertRowid);
 
-  emitTo([req.user.id, otherId], 'message:new', { ...message, sender_name: req.user.name });
+  const senderName = req.user.role === 'admin' ? SUPPORT_NAME : req.user.name;
+  emitTo([req.user.id, otherId], 'message:new', { ...message, sender_name: senderName });
   // Only raise a notification (and push) when the recipient isn't looking at the app right now.
   if (!isOnline(otherId)) {
-    const prefix = ROLE_LABEL[req.user.role] ? `${ROLE_LABEL[req.user.role]} ` : '';
+    const prefix = req.user.role !== 'admin' && ROLE_LABEL[req.user.role] ? `${ROLE_LABEL[req.user.role]} ` : '';
     notify(otherId, {
-      type: 'message', title: `رسالة من ${prefix}${req.user.name}`,
+      type: 'message', title: `رسالة من ${prefix}${senderName}`,
       body: body ? body.slice(0, 140) : `📎 ${req.file.originalname}`, link: `/chat/${c.id}`,
     });
   }

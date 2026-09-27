@@ -281,6 +281,28 @@ test('push: test notification explains when no device is subscribed', async () =
   assert.match(r.data.error, /تفعيل الإشعارات/);
 });
 
+test('support: anyone opens الدعم الفني with the admin, sees it by that name, and admin exports the messages', async () => {
+  const conv = await student2.post('/chat/support');
+  assert.equal(conv.status, 200);
+  assert.equal((await student2.post('/chat/support')).data.id, conv.data.id, 'always the same conversation');
+  const msg = new FormData(); msg.append('body', 'اقتراح: زرار للوضع الليلي');
+  assert.equal((await student2.post(`/chat/conversations/${conv.data.id}/messages`, msg)).status, 201);
+  const mine = (await student2.get('/chat/conversations')).data.find((c) => c.id === conv.data.id);
+  assert.equal(mine.other_name, 'الدعم الفني');
+  assert.equal(mine.support, true);
+  assert.equal((await admin.get(`/chat/conversations/${conv.data.id}`)).data.other.name, student2.user.name);
+  assert.equal((await admin.post('/chat/support')).status, 400);
+
+  const { default: ExcelJS } = await import('exceljs');
+  const file = await admin.get('/admin/support/export.xlsx');
+  assert.equal(file.status, 200);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(file.data);
+  const bodies = wb.worksheets[0].getColumn(7).values;
+  assert.ok(bodies.includes('اقتراح: زرار للوضع الليلي'));
+  assert.equal((await student2.get('/admin/support/export.xlsx')).status, 403);
+});
+
 test('admin: Excel template round-trip imports students, doctors and TAs with sections', async () => {
   const { default: ExcelJS } = await import('exceljs');
   const tpl = await admin.get('/admin/users/template.xlsx');
