@@ -85,6 +85,7 @@ function PlanImportModal({ onClose, onDone }) {
       {result ? (
         <Alert tone="green" icon={CheckCircle2} title="تم تنزيل الخطة">
           {result.courses_created} مادة جديدة · {result.courses_updated} مادة اتحدثت · {result.slots} ميعاد في الجدول · {result.staff_links} إسناد لهيئة التدريس
+          {result.enrolled > 0 && ` · ${result.enrolled} تسجيل طالب في مادة`}
           {result.created.length > 0 && ` · ${result.created.length} حساب جديد`}
           {result.departments.length > 0 && ` · قسم جديد: ${result.departments.map((d) => d.name).join('، ')}`}
           <p className="mt-2">الخطوة الجاية: سجّل الطلبة من "إدارة" المادة ← تسجيل دفعة كاملة.</p>

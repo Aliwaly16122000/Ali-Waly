@@ -319,6 +319,18 @@ test('admin: department plan creates courses, staff and timetable in one go (all
   const again = await upload();
   assert.equal(again.data.courses_updated, 1);
   assert.equal((await admin.get(`/courses/${course.id}/schedule`)).data.length, 3);
+
+  // Credit hours: students get accounts and are registered course by course.
+  fill('الطلاب', 2, ['طالب ساعات', 'CH9001', 'PLNCH', '2 - الفرقة الثانية']);
+  fill('الطلاب', 3, ['طالب ساعات بسكشن', 'CH9002', 'PLNCH', '2 - الفرقة الثانية', '2']);
+  fill('التسجيل', 2, ['CH9001', 'PLN101']);
+  fill('التسجيل', 3, ['CH9002', 'PLN101']);
+  const withStudents = await upload();
+  assert.equal(withStudents.status, 200, JSON.stringify(withStudents.data));
+  assert.equal(withStudents.data.enrolled, 2);
+  const enrolled = (await admin.get(`/admin/courses/${course.id}/enrollments`)).data;
+  assert.deepEqual(enrolled.map((e) => [e.username, e.section]).sort(), [['CH9001', null], ['CH9002', '2']]);
+  assert.equal((await upload()).data.enrolled, 0, 're-uploading does not register twice');
 });
 
 test('calendar: term week, holidays cancel classes and stop timetable reminders', async () => {

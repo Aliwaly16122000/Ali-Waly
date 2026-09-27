@@ -68,7 +68,7 @@ export function openAttendanceSession({ course, title, userId, durationMinutes =
     rotateSeconds, nowIso(), closesAt, scheduleId);
   const sectionFilter = scheduleId && db.prepare('SELECT section FROM course_schedule WHERE id = ?').pluck().get(scheduleId);
   const students = sectionFilter
-    ? db.prepare('SELECT student_id FROM enrollments WHERE course_id = ? AND section = ?').pluck().all(course.id, sectionFilter)
+    ? db.prepare('SELECT student_id FROM enrollments WHERE course_id = ? AND (section = ? OR section IS NULL)').pluck().all(course.id, sectionFilter)
     : courseStudentIds(course.id);
   notify(students, {
     type: 'attendance', title: `تسجيل الحضور مفتوح - ${course.name}`, body: `${title} · امسح الـ QR من المدرج`, link: '/scan',

@@ -7,16 +7,19 @@ import { toMinutes } from './clock.js';
 /**
  * Department teaching plan: one workbook that creates a department's courses for a term,
  * links their doctors/TAs and builds the weekly timetable. Sheets:
- *   الدكاترة / المعيدين — staff accounts (same columns as the users template; existing usernames are kept as is)
+ *   الدكاترة / المعيدين / الطلاب — accounts (same columns as the users template; existing usernames are kept as is)
  *   المواد             — one row per course
  *   الجدول             — one row per weekly slot
+ *   التسجيل            — one row per student per course (credit hours: each student has their own courses)
  * The whole file is applied in one transaction: any error and nothing changes.
  */
 
-export const PLAN_SHEETS = { staff: ['الدكاترة', 'المعيدين'], courses: 'المواد', schedule: 'الجدول' };
+export const PLAN_SHEETS = { people: { الدكاترة: 'doctor', المعيدين: 'ta', الطلاب: 'student' }, courses: 'المواد', schedule: 'الجدول', enroll: 'التسجيل' };
 
 const COURSE_COLS = [['كود المادة *', 16], ['اسم المادة *', 38], ['القسم *', 34], ['الفرقة *', 20], ['الساعات', 9], ['الدكاترة', 40], ['المعيدين', 40]];
 const SLOT_COLS = [['كود المادة *', 16], ['النوع *', 10], ['اليوم *', 11], ['من *', 9], ['إلى *', 9], ['المكان', 14], ['السكشن', 10], ['المسؤول', 22], ['الحضور', 10], ['ملاحظات', 40]];
+const STUDENT_COLS = [['الاسم بالكامل *', 34], ['الكود الجامعي *', 16], ['القسم *', 34], ['الفرقة *', 20], ['السكشن', 10], ['البريد', 26], ['الموبايل', 16], ['كلمة السر', 14]];
+const ENROLL_COLS = [['الكود الجامعي *', 16], ['كود المادة *', 16], ['السكشن', 10], ['اسم الطالب', 34], ['اسم المادة', 34]];
 const STAFF_COLS = [['الاسم بالكامل *', 34], ['اسم المستخدم *', 24], ['القسم', 34], ['البريد', 26], ['الموبايل', 16], ['كلمة السر', 14]];
 
 const KINDS = { محاضرة: 'lecture', سكشن: 'section', تمارين: 'section', تمرين: 'section', معمل: 'lab', عملي: 'lab', lecture: 'lecture', section: 'section', lab: 'lab' };
@@ -62,22 +65,23 @@ function resolveDepartment(value, createdDepts) {
 export function applyPlan(sheets, { term, importUsers }) {
   const coursesRows = sheets[PLAN_SHEETS.courses] || [];
   const slotRows = sheets[PLAN_SHEETS.schedule] || [];
-  if (!coursesRows.length && !slotRows.length) throw new HttpError(400, 'الملف مفيهوش شيت "المواد" أو "الجدول" — استخدم نموذج خطة القسم');
+  const enrollRows = sheets[PLAN_SHEETS.enroll] || [];
+  if (!coursesRows.length && !slotRows.length && !enrollRows.length) throw new HttpError(400, 'الملف مفيهوش شيت "المواد" أو "الجدول" أو "التسجيل" — استخدم نموذج خطة القسم');
   if (!term) throw new HttpError(400, 'حدد الترم الحالي الأول من إعدادات النظام');
 
   const errors = [];
   const err = (sheet, row, error) => errors.push({ sheet, row, error });
-  const summary = { departments: [], courses_created: 0, courses_updated: 0, staff_links: 0, slots: 0, created: [], skipped_users: 0 };
+  const summary = { departments: [], courses_created: 0, courses_updated: 0, staff_links: 0, slots: 0, enrolled: 0, created: [], skipped_users: 0 };
 
   const run = db.transaction(() => {
-    // 1) Staff accounts. Usernames that already exist are left untouched (no duplicate error).
+    // 1) Accounts. Usernames that already exist are left untouched (no duplicate error).
     const exists = db.prepare('SELECT 1 FROM users WHERE username = ?');
     const staffRows = [];
-    for (const sheet of PLAN_SHEETS.staff) {
+    for (const [sheet, role] of Object.entries(PLAN_SHEETS.people)) {
       for (const r of sheets[sheet] || []) {
-        const username = text(r.values['اسم المستخدم']);
+        const username = text(r.values['اسم المستخدم'] ?? r.values['الكود الجامعي']);
         if (username && exists.get(username)) { summary.skipped_users++; continue; }
-        staffRows.push({ ...r.values, __row: r.row, __sheet: sheet, __role: sheet === 'الدكاترة' ? 'doctor' : 'ta' });
+        staffRows.push({ ...r.values, __row: r.row, __sheet: sheet, __role: role });
       }
     }
     if (staffRows.length) {
@@ -156,6 +160,20 @@ export function applyPlan(sheets, { term, importUsers }) {
       }
       slots.push([courseId, kind, day, start, end, text(values['المكان']) || null, text(values['السكشن']) || null, staffId, mode]);
     }
+    // 4) Per-student registrations. A section here overrides the student's; empty keeps it.
+    const studentId = db.prepare("SELECT id FROM users WHERE username = ? AND role = 'student'").pluck();
+    const enrollments = [];
+    for (const { row, values } of enrollRows) {
+      const E = PLAN_SHEETS.enroll;
+      const username = text(values['الكود الجامعي']);
+      const code = text(values['كود المادة']).toUpperCase();
+      const sid = studentId.get(username);
+      if (!sid) { err(E, row, `طالب غير موجود: ${username}`); continue; }
+      const courseId = courseIds.get(code) ?? findCourse.get(code, term.academic_year, term.semester);
+      if (!courseId) { err(E, row, `مادة غير موجودة في الترم الحالي: ${code}`); continue; }
+      enrollments.push([courseId, sid, text(values['السكشن']) || null]);
+    }
+
     if (errors.length) throw new HttpError(400, `في ${errors.length} خطأ في الملف — مفيش أي تغيير اتعمل`, { errors });
 
     const del = db.prepare('DELETE FROM course_schedule WHERE course_id = ?');
@@ -164,6 +182,15 @@ export function applyPlan(sheets, { term, importUsers }) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     slots.forEach((s) => ins.run(...s));
     summary.slots = slots.length;
+
+    const enroll = db.prepare(`INSERT INTO enrollments (course_id, student_id, section) VALUES (?, ?, ?)
+      ON CONFLICT (course_id, student_id) DO UPDATE SET section = COALESCE(excluded.section, section)`);
+    const had = db.prepare('SELECT 1 FROM enrollments WHERE course_id = ? AND student_id = ?');
+    const defaultSection = db.prepare('SELECT section FROM users WHERE id = ?').pluck();
+    for (const [courseId, sid, section] of enrollments) {
+      if (!had.get(courseId, sid)) summary.enrolled++;
+      enroll.run(courseId, sid, section ?? defaultSection.get(sid) ?? null);
+    }
     return newStaff;
   });
 
@@ -187,8 +214,10 @@ export async function planTemplate() {
     ['   السكشن اختياري: لو كتبته (مثلاً 1 أو 2) التذكير والحضور بيروحوا لطلبة السكشن ده بس — لازم يطابق عمود السكشن في بيانات الطلاب.'],
     ['   الحضور: تذكير (الدكتور يتفكّر يفتح QR) / تلقائي (QR يفتح لوحده) / بدون.'],
     ['4) المواد بتتسجل في الترم الحالي. الجدول بتاع أي مادة في الملف بيتبدل بالكامل بالجدول اللي في الملف، فتقدر تعدل وترفع تاني.'],
-    ['5) لو في أي خطأ مفيش حاجة بتتغير، وبيظهرلك رقم الصف والمشكلة.'],
-    ['6) بعد الرفع: سجّل الطلبة في المواد من "إدارة المادة ← تسجيل دفعة كاملة".'],
+    ['5) شيت "الطلاب" (اختياري): حسابات الطلبة. شيت "التسجيل" (اختياري): كل صف = طالب في مادة — للساعات المعتمدة لما كل طالب ليه مواده.'],
+    ['   الطالب اللي من غير سكشن بيتبع كل مواعيد السكاشن بتاعة المادة.'],
+    ['6) لو في أي خطأ مفيش حاجة بتتغير، وبيظهرلك رقم الصف والمشكلة.'],
+    ['7) من غير شيت التسجيل: سجّل الطلبة من "إدارة المادة ← تسجيل دفعة كاملة".'],
   ].forEach(([t, bold]) => { const r = help.addRow([t]); r.font = { name: 'Arial', bold: !!bold, size: bold ? 14 : 11 }; });
 
   const sheet = (name, cols) => {
@@ -204,8 +233,10 @@ export async function planTemplate() {
   };
   const doctors = sheet('الدكاترة', STAFF_COLS);
   const tas = sheet('المعيدين', STAFF_COLS);
+  const students = sheet('الطلاب', STUDENT_COLS);
   const courses = sheet('المواد', COURSE_COLS);
   const schedule = sheet('الجدول', SLOT_COLS);
+  sheet('التسجيل', ENROLL_COLS).getColumn(1).numFmt = '@';
   const lists = wb.addWorksheet('القوائم', { state: 'hidden' });
   const columns = [
     ['القسم', depts.map((d) => `${d.code} - ${d.name}`)], ['الفرقة', LEVEL_OPTIONS], ['النوع', ['محاضرة', 'سكشن', 'معمل']],
@@ -223,7 +254,9 @@ export async function planTemplate() {
       };
     }
   };
-  if (depts.length) [doctors, tas].forEach((ws) => validate(ws, 'C', 'A', depts.length));
+  if (depts.length) [doctors, tas, students].forEach((ws) => validate(ws, 'C', 'A', depts.length));
+  validate(students, 'D', 'B', LEVEL_OPTIONS.length);
+  students.getColumn(2).numFmt = '@';
   if (depts.length) validate(courses, 'C', 'A', depts.length, false); // a new "CODE - name" is allowed
   validate(courses, 'D', 'B', LEVEL_OPTIONS.length);
   validate(schedule, 'B', 'C', 3);
