@@ -730,6 +730,36 @@ router.delete('/courses/:id/enrollments/:studentId', (req, res) => {
   res.json({ ok: true });
 });
 
+// ───────────── Technical support (chats with the admin) ─────────────
+/** Every message exchanged with an admin, one sheet — to review suggestions and complaints in one place. */
+router.get('/support/export.xlsx', async (req, res) => {
+  const days = Math.min(Number(req.query.days) || 3650, 3650);
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  const rows = db.prepare(`
+    SELECT m.created_at, m.body, m.file_name, s.role AS sender_role, s.name AS sender_name,
+      p.name AS person, p.username, p.role AS person_role, d.name AS department, c.id AS conversation_id
+    FROM messages m JOIN conversations c ON c.id = m.conversation_id
+    JOIN users a ON a.id IN (c.user1_id, c.user2_id) AND a.role = 'admin'
+    JOIN users p ON p.id = CASE WHEN c.user1_id = a.id THEN c.user2_id ELSE c.user1_id END AND p.role != 'admin'
+    JOIN users s ON s.id = m.sender_id LEFT JOIN departments d ON d.id = p.department_id
+    WHERE m.created_at >= ? ORDER BY p.name, m.id`).all(since);
+  const ROLE = { student: 'طالب', ta: 'معيد', doctor: 'دكتور', leader: 'قيادة' };
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('رسائل الدعم', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
+  ws.columns = [['الشخص', 28], ['الكود', 16], ['الصفة', 10], ['القسم', 24], ['التاريخ', 18], ['من', 14], ['الرسالة', 80], ['مرفق', 24]]
+    .map(([header, width]) => ({ header, width }));
+  ws.getRow(1).font = { bold: true, name: 'Arial' };
+  const when = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', dateStyle: 'short', timeStyle: 'short' });
+  for (const r of rows) {
+    const row = ws.addRow([r.person, r.username, ROLE[r.person_role] || r.person_role, r.department || '', when.format(new Date(r.created_at)),
+      r.sender_role === 'admin' ? 'الدعم الفني' : 'المستخدم', r.body || '', r.file_name || '']);
+    row.alignment = { wrapText: true, vertical: 'top' };
+  }
+  res.attachment(`support-messages-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 // ───────────── Department plan (courses + staff + weekly timetable in one workbook) ─────────────
 router.get('/plan/template.xlsx', async (_req, res) => {
   const wb = await planTemplate();

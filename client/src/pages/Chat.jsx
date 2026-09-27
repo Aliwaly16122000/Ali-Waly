@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Send, Paperclip, Search, ChevronRight, MessagesSquare, Plus, Download, X, Check, CheckCheck, Smile } from 'lucide-react';
+import { Send, Paperclip, Search, ChevronRight, MessagesSquare, Plus, Download, X, Check, CheckCheck, Smile, LifeBuoy, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, toForm } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { useAuth } from '../context/AuthContext';
 import { useRealtime, useSocketEvent } from '../context/RealtimeContext';
 import { ROLE_LABELS, fmtDate, fmtTime, timeAgo, titled } from '../lib/format';
-import { openConversation } from '../lib/chat';
+import { openConversation, openSupport } from '../lib/chat';
 import { Avatar, Badge, Button, Card, EmptyState, Input, Modal, Spinner, cx } from '../components/ui';
 
 const EMOJIS = ['😀', '😂', '🤣', '😊', '😍', '🥰', '😘', '😉', '😎', '🤩', '🥳', '😇', '🙂', '🤔', '🤗', '😅', '😢', '😭', '😡', '😱',
@@ -93,6 +93,14 @@ function NewChatModal({ open, onClose }) {
 
 function ConversationList({ list, activeId, onNew }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const support = async () => {
+    try {
+      navigate(`/chat/${await openSupport()}`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
   const [q, setQ] = useState('');
   const filtered = (list || []).filter((c) => !q || c.other_name.includes(q));
   return (
@@ -106,6 +114,17 @@ function ConversationList({ list, activeId, onNew }) {
           <Search className="size-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
           <Input className="pr-9 h-9" placeholder="بحث" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        {user.role === 'admin' ? (
+          <Button as="a" href="/api/admin/support/export.xlsx" size="sm" variant="soft" icon={FileSpreadsheet} className="w-full">تصدير كل رسائل الدعم (Excel)</Button>
+        ) : (
+          <button onClick={support} className="w-full flex items-center gap-3 rounded-xl border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10 px-3 py-2.5 text-right hover:border-brand-400">
+            <span className="size-9 rounded-full bg-brand-600 text-white grid place-items-center shrink-0"><LifeBuoy className="size-5" /></span>
+            <span className="min-w-0">
+              <span className="block font-bold text-sm">الدعم الفني</span>
+              <span className="block text-xs text-muted truncate">مشكلة أو اقتراح؟ ابعتلنا هنا</span>
+            </span>
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {!list ? <div className="grid place-items-center py-10"><Spinner /></div>

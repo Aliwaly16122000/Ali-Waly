@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, QrCode, MessagesSquare, Bell, Building2, Users, Library, LogOut,
-  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList, Landmark, Gauge, ClipboardCheck,
+  Moon, Sun, Menu, X, UserCog, CheckCheck, CalendarDays, Megaphone, DatabaseBackup, CalendarRange, ClipboardList, Landmark, Gauge, ClipboardCheck, LifeBuoy,
 } from 'lucide-react';
 import { Logo, BrandTitle } from '../context/BrandingContext';
 import HeaderClock from './HeaderClock';
@@ -12,6 +12,8 @@ import { api } from '../lib/api';
 import { ROLE_LABELS, titled, timeAgo } from '../lib/format';
 import { Avatar, IconButton, cx, Spinner } from './ui';
 import { NotificationIcon } from './NotificationIcon';
+import { toast } from 'sonner';
+import { openSupport } from '../lib/chat';
 
 function navFor(role, user) {
   const common = [{ to: '/', label: 'الرئيسية', icon: LayoutDashboard, end: true }];
@@ -126,6 +128,25 @@ function NotificationsMenu() {
   );
 }
 
+/** الدعم الفني: straight into a chat with the faculty admin, for problems and suggestions. */
+function SupportButton({ onNavigate }) {
+  const navigate = useNavigate();
+  const open = async () => {
+    try {
+      const id = await openSupport();
+      onNavigate?.();
+      navigate(`/chat/${id}`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+  return (
+    <button onClick={open} className="mb-1 w-full flex items-center gap-3 rounded-xl px-3 h-10 text-sm font-semibold text-muted hover:bg-surface-2 hover:text-brand-600">
+      <LifeBuoy className="size-4" /> الدعم الفني والاقتراحات
+    </button>
+  );
+}
+
 function Sidebar({ items, badges, onNavigate, user, onLogout }) {
   return (
     <div className="flex flex-col h-full">
@@ -154,6 +175,7 @@ function Sidebar({ items, badges, onNavigate, user, onLogout }) {
         ))}
       </nav>
       <div className="p-3 border-t border-line">
+        {user.role !== 'admin' && <SupportButton onNavigate={onNavigate} />}
         <NavLink to="/profile" onClick={onNavigate} className={({ isActive }) => cx('flex items-center gap-3 rounded-xl p-2 hover:bg-surface-2', isActive && 'bg-surface-2')}>
           <Avatar name={user.name} size="sm" />
           <div className="min-w-0 flex-1">
