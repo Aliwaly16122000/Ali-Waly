@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarRange, Copy, Database, Download, HardDriveDownload, Save, Image as ImageIcon } from 'lucide-react';
+import { CalendarRange, Copy, Database, Download, HardDriveDownload, Save, Image as ImageIcon, Mail, Send } from 'lucide-react';
 import { Logo, useBranding } from '../../context/BrandingContext';
 import { toast } from 'sonner';
 import { api, toForm } from '../../lib/api';
@@ -197,12 +197,79 @@ function BackupsCard() {
   );
 }
 
+/** Weekly email copy of the database, so losing the server doesn't lose the data. */
+function OffsiteCard() {
+  const { data, reload } = useApi('/admin/backups/offsite');
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(null);
+  useEffect(() => {
+    if (data && !form) setForm({ enabled: data.enabled, user: data.user || '', pass: '', to: data.to || '', weekday: data.weekday ?? 5 });
+  }, [data, form]);
+  if (!data || !form) return null;
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  const save = async () => {
+    setBusy('save');
+    try {
+      await api.put('/admin/backups/offsite', { ...form, weekday: Number(form.weekday), pass: form.pass || undefined });
+      toast.success(form.enabled ? 'تم الحفظ — النسخة هتتبعت كل أسبوع' : 'تم الحفظ');
+      setForm({ ...form, pass: '' });
+      reload(true);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const test = async () => {
+    setBusy('test');
+    try {
+      const r = await api.post('/admin/backups/offsite/test');
+      toast.success(`اتبعتت النسخة على ${r.to} ✅ — شوف الإيميل`);
+      reload(true);
+    } catch (err) {
+      toast.error(err.message, { duration: 10000 });
+      reload(true);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Card>
+      <CardHeader icon={Mail} title="نسخة احتياطية أسبوعية على الإيميل" subtitle="نسخة من كل البيانات بتوصلك إيميل مرة في الأسبوع — لو السيرفر اتعطل ترجع بيها كل حاجة" />
+      <div className="px-5 pb-5 space-y-4">
+        <Alert tone="blue">
+          الإيميل المرسل لازم يكون Gmail وتعمله <b>App Password</b>: من حساب جوجل ← Security ← 2-Step Verification (شغّله) ← App passwords ← اكتب اسم زي "Portal" ← انسخ الـ 16 حرف هنا. الأحسن تعمل Gmail مخصوص للبوابة.
+        </Alert>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="الإيميل المرسل (Gmail)">{(id) => <Input id={id} dir="ltr" type="email" value={form.user} onChange={set('user')} placeholder="portal.backup@gmail.com" />}</Field>
+          <Field label="App Password" hint={data.has_password ? 'محفوظة — سيبها فاضية عشان متتغيرش' : '16 حرف من إعدادات جوجل'}>
+            {(id) => <Input id={id} dir="ltr" type="password" autoComplete="new-password" value={form.pass} onChange={set('pass')} placeholder={data.has_password ? '••••••••••••••••' : 'abcd efgh ijkl mnop'} />}
+          </Field>
+          <Field label="الإيميل اللي هيستلم النسخة">{(id) => <Input id={id} dir="ltr" type="email" value={form.to} onChange={set('to')} placeholder="you@gmail.com" />}</Field>
+          <Field label="يوم الإرسال">
+            {(id) => <Select id={id} value={form.weekday} onChange={set('weekday')}>{data.weekdays.map((d, i) => <option key={d} value={i}>{d} (الساعة 4 الفجر)</option>)}</Select>}
+          </Field>
+        </div>
+        <label className="flex items-center gap-2 text-sm font-semibold">
+          <input type="checkbox" className="size-4 accent-brand-600" checked={form.enabled} onChange={set('enabled')} /> تفعيل الإرسال الأسبوعي
+        </label>
+        {data.last_sent && <p className="text-xs text-muted">آخر نسخة اتبعتت: {fmtDateTime(data.last_sent)}</p>}
+        {data.last_error && <Alert tone="red">{data.last_error}</Alert>}
+        <div className="flex flex-wrap gap-2">
+          <Button icon={Save} loading={busy === 'save'} onClick={save}>حفظ</Button>
+          <Button variant="secondary" icon={Send} loading={busy === 'test'} disabled={!data.has_password || !data.to} onClick={test}>ابعت نسخة دلوقتي (تجربة)</Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function System() {
   return (
     <>
       <PageHeader title="إعدادات الكلية" subtitle="الهوية، الترم الحالي وتواريخه، النسخ الاحتياطي، وتجهيز ترم جديد" />
       <div className="grid lg:grid-cols-2 gap-6">
-        <div className="space-y-6"><BrandingCard /><TermCard /><BackupsCard /></div>
+        <div className="space-y-6"><BrandingCard /><TermCard /><BackupsCard /><OffsiteCard /></div>
         <CloneCard />
       </div>
     </>

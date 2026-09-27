@@ -241,6 +241,24 @@ test('admin: bulk import creates accounts with passwords and reports bad rows', 
   assert.equal(fresh.user.must_change_password, true);
 });
 
+test('offsite backup: email settings never return the password, and a bad server gives a clear error', async () => {
+  const empty = (await admin.get('/admin/backups/offsite')).data;
+  assert.equal(empty.enabled, false);
+  assert.equal((await admin.put('/admin/backups/offsite', { enabled: true, user: 'x@gmail.com', to: '', weekday: 5 })).status, 400);
+  const saved = await admin.put('/admin/backups/offsite', {
+    enabled: true, user: 'portal@gmail.com', pass: 'abcd efgh ijkl mnop', to: 'me@gmail.com', weekday: 5, host: '127.0.0.1', port: 1,
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.equal(saved.data.has_password, true);
+  assert.equal(saved.data.pass, undefined);
+  assert.ok(!JSON.stringify((await admin.get('/admin/backups/offsite')).data).includes('abcd'));
+  const sent = await admin.post('/admin/backups/offsite/test');
+  assert.equal(sent.status, 400);
+  assert.match(sent.data.error, /فشل الإرسال/);
+  assert.match((await admin.get('/admin/backups/offsite')).data.last_error, /فشل الإرسال/);
+  assert.equal((await doctor.get('/admin/backups/offsite')).status, 403);
+});
+
 test('backups: admin can snapshot and download, names are validated', async () => {
   const b = await admin.post('/admin/backups');
   assert.equal(b.status, 200);

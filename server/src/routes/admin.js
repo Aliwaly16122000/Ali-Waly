@@ -10,6 +10,7 @@ import { currentTerm, listTerms, setCurrentTerm, setTermDates, termInfo } from '
 import { applyPlan, planTemplate } from '../lib/plan.js';
 import { readSheets } from '../lib/excel.js';
 import { backupPath, listBackups, runBackup } from '../lib/backup.js';
+import { WEEKDAYS, publicOffsite, readOffsite, sendOffsiteBackup, writeOffsite } from '../lib/offsite.js';
 import ExcelJS from 'exceljs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -102,6 +103,34 @@ router.get('/backups', (_req, res) => res.json(listBackups()));
 
 router.post('/backups', async (_req, res) => {
   res.json(await runBackup());
+});
+
+/** Weekly email copy of the database (settings, and a send-now to test them). */
+router.get('/backups/offsite', (_req, res) => res.json({ ...publicOffsite(), weekdays: WEEKDAYS }));
+
+router.put('/backups/offsite', (req, res) => {
+  const b = parse(z.object({
+    enabled: z.boolean(),
+    user: z.string().trim().email('اكتب الإيميل المرسل صح').or(z.literal('')),
+    pass: z.string().trim().max(200).optional(), // empty/omitted keeps the saved one
+    to: z.string().trim().email('اكتب الإيميل المستلم صح').or(z.literal('')),
+    weekday: z.number().int().min(0).max(6),
+    host: z.string().trim().max(100).optional(),
+    port: z.number().int().min(1).max(65535).optional(),
+  }).refine((v) => !v.enabled || (v.user && v.to), 'كمّل الإيميل المرسل والمستلم قبل التفعيل'), req.body);
+  const current = readOffsite();
+  const pass = (b.pass || '').replace(/\s+/g, '') || current.pass; // Google shows app passwords in groups of 4
+  if (b.enabled && !pass) throw badRequest('اكتب كلمة سر التطبيق (App Password)');
+  writeOffsite({ ...current, ...b, pass, host: b.host || current.host || 'smtp.gmail.com', port: b.port || current.port || 465 });
+  res.json(publicOffsite());
+});
+
+router.post('/backups/offsite/test', async (_req, res) => {
+  try {
+    res.json(await sendOffsiteBackup());
+  } catch (err) {
+    throw badRequest(err.message);
+  }
 });
 
 router.get('/backups/:name', (req, res) => {
