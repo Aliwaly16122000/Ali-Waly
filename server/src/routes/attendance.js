@@ -3,8 +3,8 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import db from '../db.js';
 import { assertCurrentTerm } from '../lib/term.js';
-import { parse, badRequest, notFound, toId, HttpError } from '../lib/http.js';
-import { courseAccess, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
+import { parse, badRequest, forbidden, notFound, toId, HttpError } from '../lib/http.js';
+import { courseAccess, courseRole, courseStudentIds, courseStaffIds, READERS } from '../lib/access.js';
 import { notify } from '../lib/notify.js';
 import { emitTo } from '../lib/realtime.js';
 import { nowIso } from '../lib/time.js';
@@ -41,7 +41,7 @@ courseAttendance.get('/', (req, res) => {
   const courseId = toId(req.params.courseId);
   const { role } = courseAccess(req.user, courseId);
   const sessions = db.prepare(`
-    SELECT s.id, s.title, s.started_at, s.closes_at, s.closed_at, s.rotate_seconds, u.name AS created_by_name,
+    SELECT s.id, s.title, s.started_at, s.closes_at, s.closed_at, s.rotate_seconds, s.created_by, u.name AS created_by_name,
       (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) AS present_count,
       (SELECT r.recorded_at FROM attendance_records r WHERE r.session_id = s.id AND r.student_id = ?) AS my_recorded_at
     FROM attendance_sessions s LEFT JOIN users u ON u.id = s.created_by
@@ -139,7 +139,9 @@ router.post('/:id/extend', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const { s } = loadSession(req, ['doctor']);
+  const { s } = loadSession(req, ['doctor', 'ta']);
+  // A TA may delete only the sessions they opened themselves (e.g. a test); the doctor and admin any.
+  if (courseRole(req.user, s.course_id) === 'ta' && s.created_by !== req.user.id) throw forbidden('المعيد يقدر يحذف المحاضرات اللي فتحها بنفسه بس');
   db.prepare('DELETE FROM attendance_sessions WHERE id = ?').run(s.id);
   res.json({ ok: true });
 });
