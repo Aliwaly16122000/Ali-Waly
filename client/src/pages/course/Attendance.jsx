@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { QrCode, Play, CalendarCheck, CheckCircle2, XCircle, Radio, ChevronDown, ChevronUp, MapPin, Crosshair, Smartphone } from 'lucide-react';
+import { QrCode, Play, CalendarCheck, CheckCircle2, XCircle, Radio, ChevronDown, ChevronUp, MapPin, Crosshair, Smartphone, Trash2 } from 'lucide-react';
 import { getLocation } from '../../lib/device';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
 import { fmtDateTime, pctTone, timeAgo } from '../../lib/format';
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, PageLoader, Progress, Select, StatCard, Table, Td, Th, Spinner, cx } from '../../components/ui';
+import { Badge, Button, Card, CardHeader, ConfirmModal, EmptyState, ErrorState, Field, Input, Modal, PageLoader, Progress, Select, StatCard, Table, Td, Th, Spinner, cx } from '../../components/ui';
 
 function GeoSettings({ course }) {
   const [form, setForm] = useState({
@@ -116,6 +116,19 @@ function StaffAttendance({ course, data, reload }) {
   const [form, setForm] = useState({ title: `محاضرة ${data.sessions.length + 1}`, duration_minutes: 15, rotate_seconds: 15 });
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const canDelete = ['doctor', 'admin'].includes(course.my_role);
+  const removeSession = async () => {
+    try {
+      await api.del(`/attendance/${deleting.id}`);
+      toast.success('تم حذف المحاضرة وحضورها');
+      setDeleting(null);
+      setExpanded(null);
+      reload(true);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   const start = async (e) => {
     e.preventDefault();
@@ -173,10 +186,22 @@ function StaffAttendance({ course, data, reload }) {
               <span className="text-sm font-bold ltr w-16 text-left">{s.present_count}/{data.students_count}</span>
               {expanded === s.id ? <ChevronUp className="size-4 text-muted" /> : <ChevronDown className="size-4 text-muted" />}
             </button>
-            {expanded === s.id && <div className="bg-surface-2/50 border-t border-line"><SessionRoster sessionId={s.id} readOnly={readOnly} onChanged={() => reload(true)} /></div>}
+            {expanded === s.id && (
+              <div className="bg-surface-2/50 border-t border-line">
+                <SessionRoster sessionId={s.id} readOnly={readOnly} onChanged={() => reload(true)} />
+                {canDelete && (
+                  <div className="flex justify-end px-5 py-3 border-t border-line">
+                    <Button size="sm" variant="ghost" icon={Trash2} className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => setDeleting(s)}>حذف المحاضرة دي</Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </Card>
+
+      <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={removeSession} title="حذف المحاضرة"
+        message={`هيتم حذف "${deleting?.title}" وكل الحضور المسجل فيها نهائياً — مناسب لو كانت تجربة أو اتفتحت بالغلط.`} confirmLabel="حذف نهائياً" />
 
       <Modal open={open} onClose={() => setOpen(false)} title="بدء تسجيل الحضور" subtitle="هيوصل إشعار لكل طلاب المادة"
         footer={<><Button variant="secondary" onClick={() => setOpen(false)}>إلغاء</Button><Button form="att-form" type="submit" icon={Play} loading={saving}>بدء وعرض الـ QR</Button></>}>
