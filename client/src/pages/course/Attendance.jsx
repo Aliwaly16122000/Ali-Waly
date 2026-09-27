@@ -136,7 +136,8 @@ function StaffAttendance({ course, data, reload }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const { id } = await api.post(`/courses/${course.id}/attendance`, { ...form, duration_minutes: Number(form.duration_minutes), rotate_seconds: Number(form.rotate_seconds) });
+      const { id, reused } = await api.post(`/courses/${course.id}/attendance`, { ...form, duration_minutes: Number(form.duration_minutes), rotate_seconds: Number(form.rotate_seconds) });
+      if (reused) toast.info('المحاضرة دي اتفتحلها حضور النهارده — اتفتح نفس التسجيل تاني بدل ما يتعمل محاضرة جديدة');
       navigate(`/attendance/${id}/live`);
     } catch (err) {
       toast.error(err.message);
@@ -205,7 +206,7 @@ function StaffAttendance({ course, data, reload }) {
       <ConfirmModal open={!!deleting} onClose={() => setDeleting(null)} onConfirm={removeSession} title="حذف المحاضرة"
         message={`هيتم حذف "${deleting?.title}" وكل الحضور المسجل فيها نهائياً — مناسب لو كانت تجربة أو اتفتحت بالغلط.`} confirmLabel="حذف نهائياً" />
 
-      <Modal open={open} onClose={() => setOpen(false)} title="بدء تسجيل الحضور" subtitle="هيوصل إشعار لكل طلاب المادة"
+      <Modal open={open} onClose={() => setOpen(false)} title="بدء تسجيل الحضور" subtitle="هيوصل إشعار للطلاب · لو المحاضرة دي اتفتحلها حضور النهارده هيتفتح نفس التسجيل تاني"
         footer={<><Button variant="secondary" onClick={() => setOpen(false)}>إلغاء</Button><Button form="att-form" type="submit" icon={Play} loading={saving}>بدء وعرض الـ QR</Button></>}>
         <form id="att-form" onSubmit={start} className="grid grid-cols-2 gap-4">
           <Field label="عنوان المحاضرة" className="col-span-2">{(id) => <Input id={id} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />}</Field>

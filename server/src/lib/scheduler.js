@@ -119,7 +119,7 @@ function timetable() {
       const { staff } = slotAudience(slot);
       if (slot.attendance_mode === 'auto') {
         const course = db.prepare('SELECT * FROM courses WHERE id = ?').get(slot.course_id);
-        const id = openAttendanceSession({ course, title: slotTitle(slot), userId: staff[0] ?? null, scheduleId: slot.id, durationMinutes: slot.attendance_duration });
+        const { id } = openAttendanceSession({ course, title: slotTitle(slot), userId: staff[0] ?? null, scheduleId: slot.id, durationMinutes: slot.attendance_duration });
         notify(staff, {
           type: 'attendance', title: `✅ تم فتح الحضور تلقائياً - ${slot.course_name}`,
           body: `اعرض الـ QR للطلاب · يقفل بعد ${slot.attendance_duration} دقيقة`, link: `/attendance/${id}/live`,

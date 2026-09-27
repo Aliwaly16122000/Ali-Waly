@@ -8,6 +8,7 @@ import { courseAccess, courseRole, courseStudentIds, courseStaffIds, READERS } f
 import { notify } from '../lib/notify.js';
 import { emitTo } from '../lib/realtime.js';
 import { nowIso } from '../lib/time.js';
+import { localNow, toMinutes } from '../lib/clock.js';
 
 /**
  * QR attendance. Each session has a secret; the QR shown on the projector encodes a
@@ -59,21 +60,58 @@ courseAttendance.get('/', (req, res) => {
   res.json({ sessions: sessions.map(({ my_recorded_at, ...s }) => s), students_count: studentsCount });
 });
 
-/** Opens an attendance session and notifies the course's students. Returns the new session id. */
+/** The timetable slot running now for a course (from 30 min before it starts until it ends), if any. */
+function currentSlot(courseId, userId) {
+  const now = localNow();
+  const slots = db.prepare('SELECT * FROM course_schedule WHERE course_id = ? AND day_of_week = ?').all(courseId, now.dow)
+    .filter((s) => now.minutes >= toMinutes(s.start_time) - 30 && now.minutes <= toMinutes(s.end_time));
+  // Parallel sections: prefer the one this person teaches.
+  return slots.find((s) => s.staff_id === userId) ?? slots[0] ?? null;
+}
+
+/**
+ * The session to reopen instead of starting another one for the same class: today's session
+ * for this timetable slot, or — with no slot — one of this course opened in the last 3 hours.
+ */
+function sessionToReuse(courseId, scheduleId) {
+  const today = localNow().date;
+  const recent = db.prepare(`SELECT * FROM attendance_sessions WHERE course_id = ? AND started_at > ? ORDER BY id DESC`)
+    .all(courseId, new Date(Date.now() - 24 * 3600 * 1000).toISOString())
+    .filter((s) => localNow(new Date(s.started_at)).date === today);
+  if (scheduleId) return recent.find((s) => s.schedule_id === scheduleId) ?? null;
+  return recent.find((s) => Date.now() - new Date(s.started_at).getTime() < 3 * 3600 * 1000) ?? null;
+}
+
+/**
+ * Opens attendance for a class and notifies its students. One class = one session: opening it
+ * again (same timetable slot today, or within 3 hours when there's no slot) reopens the same
+ * session instead of adding another lecture to the record. Returns { id, reused }.
+ */
 export function openAttendanceSession({ course, title, userId, durationMinutes = 15, rotateSeconds = 15, scheduleId = null }) {
+  const slot = scheduleId ? db.prepare('SELECT * FROM course_schedule WHERE id = ?').get(scheduleId) : currentSlot(course.id, userId);
   const closesAt = new Date(Date.now() + durationMinutes * 60_000).toISOString();
-  const { lastInsertRowid } = db.prepare(`
-    INSERT INTO attendance_sessions (course_id, title, created_by, secret, rotate_seconds, started_at, closes_at, schedule_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(course.id, title, userId, crypto.randomBytes(32).toString('hex'),
-    rotateSeconds, nowIso(), closesAt, scheduleId);
-  const sectionFilter = scheduleId && db.prepare('SELECT section FROM course_schedule WHERE id = ?').pluck().get(scheduleId);
-  const students = sectionFilter
-    ? db.prepare('SELECT student_id FROM enrollments WHERE course_id = ? AND (section = ? OR section IS NULL)').pluck().all(course.id, sectionFilter)
+  const existing = sessionToReuse(course.id, slot?.id ?? null);
+  let id;
+  if (existing) {
+    const stillOpen = !existing.closed_at && existing.closes_at > nowIso();
+    db.prepare('UPDATE attendance_sessions SET closes_at = ?, closed_at = NULL WHERE id = ?')
+      .run(stillOpen && existing.closes_at > closesAt ? existing.closes_at : closesAt, existing.id);
+    id = existing.id;
+  } else {
+    const { lastInsertRowid } = db.prepare(`
+      INSERT INTO attendance_sessions (course_id, title, created_by, secret, rotate_seconds, started_at, closes_at, schedule_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(course.id, title, userId, crypto.randomBytes(32).toString('hex'),
+      rotateSeconds, nowIso(), closesAt, slot?.id ?? null);
+    id = Number(lastInsertRowid);
+  }
+  const students = slot?.section
+    ? db.prepare('SELECT student_id FROM enrollments WHERE course_id = ? AND (section = ? OR section IS NULL)').pluck().all(course.id, slot.section)
     : courseStudentIds(course.id);
+  const sessionTitle = existing?.title ?? title;
   notify(students, {
-    type: 'attendance', title: `تسجيل الحضور مفتوح - ${course.name}`, body: `${title} · امسح الـ QR من المدرج`, link: '/scan',
+    type: 'attendance', title: `تسجيل الحضور مفتوح - ${course.name}`, body: `${sessionTitle} · امسح الـ QR من المدرج`, link: '/scan',
   });
-  return Number(lastInsertRowid);
+  return { id, reused: !!existing };
 }
 
 courseAttendance.post('/', (req, res) => {
@@ -85,8 +123,8 @@ courseAttendance.post('/', (req, res) => {
     duration_minutes: z.number().int().min(1).max(240).default(15),
     rotate_seconds: z.number().int().min(5).max(120).default(15),
   }), req.body);
-  const id = openAttendanceSession({ course, title, userId: req.user.id, durationMinutes: duration_minutes, rotateSeconds: rotate_seconds });
-  res.status(201).json({ id });
+  const { id, reused } = openAttendanceSession({ course, title, userId: req.user.id, durationMinutes: duration_minutes, rotateSeconds: rotate_seconds });
+  res.status(reused ? 200 : 201).json({ id, reused });
 });
 
 function loadSession(req, allowed) {

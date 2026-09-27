@@ -124,11 +124,11 @@ router.post('/:id/start-attendance', (req, res) => {
     SELECT id FROM attendance_sessions WHERE schedule_id = ? AND closed_at IS NULL AND closes_at > ? ORDER BY id DESC LIMIT 1`)
     .get(slot.id, new Date().toISOString());
   if (existing) return res.json({ id: existing.id, existing: true });
-  const id = openAttendanceSession({
+  const { id, reused } = openAttendanceSession({
     course, userId: req.user.id, scheduleId: slot.id, durationMinutes: slot.attendance_duration,
     title: slotTitle(slot),
   });
-  res.status(201).json({ id });
+  res.status(reused ? 200 : 201).json({ id, existing: reused });
 });
 
 export function slotTitle(slot) {
