@@ -4,6 +4,7 @@ import { nowIso } from './time.js';
 import { localNow, toMinutes } from './clock.js';
 import { isTeachingDay, termFilter } from './term.js';
 import { dailyBackup } from './backup.js';
+import { weeklyOffsite } from './offsite.js';
 import { examReminders } from '../routes/exams.js';
 import { announceGrades } from '../routes/courses.js';
 import { openAttendanceSession } from '../routes/attendance.js';
@@ -152,6 +153,9 @@ export function startScheduler() {
       deadlineReminders();
       absenceWarnings();
       dailyBackup().catch((err) => console.error('backup failed', err));
+      weeklyOffsite((msg) => notify(db.prepare("SELECT id FROM users WHERE role = 'admin' AND is_active = 1").pluck().all(), {
+        type: 'announcement', title: '⚠️ النسخة الاحتياطية الأسبوعية مااتبعتتش', body: msg, link: '/admin/system',
+      }));
     } catch (err) {
       console.error('scheduler error', err);
     }
