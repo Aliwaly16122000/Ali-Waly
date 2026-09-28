@@ -43,7 +43,7 @@ function UserForm({ initial, departments, onClose, onSaved }) {
   return (
     <Modal open onClose={onClose} title={initial?.id ? 'تعديل مستخدم' : 'مستخدم جديد'} size="lg"
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="user-form" type="submit" loading={saving}>حفظ</Button></>}>
-      <form id="user-form" onSubmit={submit} className="grid sm:grid-cols-2 gap-4">
+      <form id="user-form" onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="الاسم بالكامل" className="sm:col-span-2">{(id) => <Input id={id} value={form.name} onChange={set('name')} required />}</Field>
         <Field label="الصلاحية">{(id) => <Select id={id} value={form.role} onChange={set('role')}>{Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
         <Field label={form.role === 'student' ? 'الكود الجامعي (اسم المستخدم)' : 'اسم المستخدم'}>{(id) => <Input id={id} dir="ltr" value={form.username} onChange={set('username')} required />}</Field>

@@ -16,7 +16,7 @@ function StudentExams({ data }) {
   return (
     <>
       {data.seats.length > 0 && (
-        <div className="grid sm:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {data.seats.map((s) => (
             <Card key={s.period} className="p-5 bg-gradient-to-br from-brand-600 to-brand-800 text-white border-0">
               <p className="text-brand-100 text-sm">رقم الجلوس · {s.period === 'midterm' ? 'امتحانات الميدترم' : 'امتحانات نهاية الترم'}</p>

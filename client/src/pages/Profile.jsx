@@ -92,7 +92,7 @@ export default function Profile() {
   return (
     <>
       <PageHeader title="حسابي" />
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
           <Card className="p-6">
             <div className="flex items-center gap-4">

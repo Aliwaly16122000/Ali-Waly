@@ -117,7 +117,7 @@ function DepartmentView({ id, upLink }) {
       <PageHeader title={data.name} subtitle={`${data.faculty_name ?? ''} · متابعة المواد في الترم الحالي`} />
       <Summary d={data} unitLabel="المواد" />
       {!data.courses.length ? <Card><EmptyState icon={Library} title="لا توجد مواد في الترم الحالي" /></Card> : (
-        <div className="grid lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {data.courses.map((c) => {
             const h = c.health;
             return (
@@ -176,7 +176,7 @@ export default function Oversight() {
   return (
     <>
       <PageHeader title="لوحة المتابعة" />
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {scopes.map((s) => (
           <Link key={`${s.scope}-${s.scope_id}`} to={`/oversight/${s.scope}/${s.scope_id}`}>
             <Card className="p-5 hover:border-brand-300"><p className="text-sm text-muted">{s.title}</p><p className="text-lg font-extrabold">{s.name}</p></Card>

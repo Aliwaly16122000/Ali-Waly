@@ -40,7 +40,7 @@ export default function Departments() {
     <>
       <PageHeader title="الأقسام" subtitle="أقسام الكلية والسنة الإعدادية" actions={<Button icon={Plus} onClick={() => setEdit({ name: '', code: '', faculty_id: faculties?.[0]?.id ?? '' })}>قسم جديد</Button>} />
       {!data.length ? <Card><EmptyState icon={Building2} title="لا توجد أقسام" /></Card> : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {data.map((d) => (
             <Card key={d.id} className="p-5">
               <div className="flex items-start gap-3">

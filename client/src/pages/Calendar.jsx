@@ -57,7 +57,7 @@ function EventForm({ onClose, onSaved, date }) {
   return (
     <Modal open onClose={onClose} title="إضافة للتقويم الأكاديمي" subtitle="الإجازات بتلغي تذكيرات المحاضرات والحضور في الأيام دي تلقائياً"
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="ev" type="submit" loading={saving}>إضافة</Button></>}>
-      <form id="ev" onSubmit={save} className="grid sm:grid-cols-2 gap-4">
+      <form id="ev" onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="العنوان" className="sm:col-span-2">{(id) => <Input id={id} value={form.title} onChange={set('title')} required placeholder="إجازة 6 أكتوبر" />}</Field>
         <Field label="النوع">{(id) => <Select id={id} value={form.kind} onChange={set('kind')}><option value="holiday">إجازة (مفيش محاضرات)</option><option value="exam">امتحانات</option><option value="event">حدث / نشاط</option></Select>}</Field>
         <div />
@@ -116,7 +116,7 @@ export default function CalendarPage() {
         </Card>
       )}
 
-      <div className="grid lg:grid-cols-[1fr_22rem] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-6">
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-line">
             <button className="p-2 rounded-lg hover:bg-surface-2" onClick={() => move(-1)} aria-label="الشهر السابق"><ChevronRight className="size-5" /></button>

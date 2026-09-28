@@ -23,7 +23,7 @@ export default function Stats({ course }) {
         <StatCard icon={CalendarCheck} label="متوسط الحضور" value={data.attendance.average_rate === null ? '—' : `${data.attendance.average_rate}%`} hint={`${data.attendance.sessions.length} محاضرة`} tone={pctTone(data.attendance.average_rate)} />
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader icon={BarChart3} title="توزيع المجموع الكلي" subtitle="عدد الطلاب في كل شريحة نسبة مئوية" />
           <div className="px-3 pb-4">
@@ -38,7 +38,7 @@ export default function Stats({ course }) {
         </Card>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader icon={ListChecks} title="متوسط كل تقييم" subtitle="كنسبة مئوية من الدرجة العظمى · الخط المتقطع = 50%" />
           <div className="px-3 pb-4">
@@ -79,7 +79,7 @@ export default function Stats({ course }) {
         </Table>
       </Card>
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {data.sections.length > 1 && (
           <Card>
             <CardHeader icon={Layers} title="مقارنة السكاشن" subtitle="متوسط النسبة المئوية" />

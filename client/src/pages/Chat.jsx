@@ -312,7 +312,7 @@ export default function Chat() {
   useSocketEvent('message:new', refresh);
 
   return (
-    <Card className="overflow-hidden h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-8rem)] grid lg:grid-cols-[22rem_1fr]">
+    <Card className="overflow-hidden h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-8rem)] grid grid-cols-1 lg:grid-cols-[22rem_1fr]">
       <div className={cx('border-l border-line min-h-0', activeId && 'hidden lg:block')}>
         <ConversationList list={list} activeId={activeId} onNew={() => setNewChat(true)} />
       </div>

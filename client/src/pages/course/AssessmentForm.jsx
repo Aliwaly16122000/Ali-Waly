@@ -57,7 +57,7 @@ export default function AssessmentForm({ open, onClose, courseId, initial, onSav
     <Modal open={open} onClose={onClose} size="lg" title={editing ? 'تعديل التقييم' : 'تقييم جديد'}
       subtitle={editing ? undefined : 'شيت، كويز، ميدترم، مشروع… الطلاب هيوصلهم إشعار'}
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button type="submit" form="assessment-form" loading={saving}>{editing ? 'حفظ' : 'نشر'}</Button></>}>
-      <form id="assessment-form" onSubmit={submit} className="grid sm:grid-cols-2 gap-4">
+      <form id="assessment-form" onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="العنوان" className="sm:col-span-2">{(id) => <Input id={id} value={form.title} onChange={set('title')} required placeholder="شيت 5 - Sorting" />}</Field>
         <Field label="النوع">
           {(id) => (

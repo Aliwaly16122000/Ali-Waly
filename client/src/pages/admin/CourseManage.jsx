@@ -66,7 +66,7 @@ function EnrollModal({ course, departments, onClose, onDone }) {
         ))}
       </div>
       {mode === 'cohort' ? (
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="القسم">{(id) => <Select id={id} value={cohort.department_id} onChange={(e) => setCohort({ ...cohort, department_id: e.target.value })}><option value="">اختر</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
           <Field label="الفرقة">{(id) => <Select id={id} value={cohort.level} onChange={(e) => setCohort({ ...cohort, level: e.target.value })}><option value="">اختر</option>{LEVEL_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}</Select>}</Field>
         </div>
@@ -171,7 +171,7 @@ export default function CourseManage() {
           <Button variant="secondary" icon={Printer} onClick={() => setCardsOpen(true)}>كروت دخول المادة</Button>
           <Button variant="ghost" icon={Trash2} className="hover:text-rose-600" onClick={() => setDeleting(true)}>حذف المادة</Button>
         </>} />
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="h-fit">
           <CardHeader icon={GraduationCap} title="هيئة التدريس" subtitle="الدكتور والمعيدين المسؤولين عن المادة" />
           <div className="px-5 pb-5 space-y-5">
