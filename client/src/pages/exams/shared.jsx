@@ -50,7 +50,7 @@ export function ExamForm({ initial, courses, onClose, onSaved }) {
   return (
     <Modal open onClose={onClose} size="lg" title={initial?.id ? 'تعديل موعد امتحان' : 'إضافة امتحان'} subtitle="الموعد بيظهر لكل طلاب المادة"
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="exam-form" type="submit" loading={saving}>حفظ</Button></>}>
-      <form id="exam-form" onSubmit={save} className="grid sm:grid-cols-2 gap-4">
+      <form id="exam-form" onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="المادة" className="sm:col-span-2">
           {(id) => <Select id={id} value={form.course_id} onChange={set('course_id')} required>{courses.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}</Select>}
         </Field>

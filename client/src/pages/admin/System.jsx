@@ -36,7 +36,7 @@ function TermCard() {
   return (
     <Card>
       <CardHeader icon={CalendarRange} title="الترم الحالي" subtitle="المواد اللي من ترمات تانية بتتحول أرشيف (عرض فقط)" />
-      <div className="px-5 pb-5 grid sm:grid-cols-3 gap-4 items-end">
+      <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
         <Field label="العام الدراسي">{(id) => <Input id={id} dir="ltr" value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} placeholder="2026/2027" />}</Field>
         <Field label="الترم">{(id) => <Select id={id} value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })}>{Object.entries(SEMESTER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
         <div />
@@ -87,7 +87,7 @@ function CloneCard() {
     <Card>
       <CardHeader icon={Copy} title="تجهيز ترم جديد" subtitle="انسخ مواد الترم الحالي بدكاترتها ومعيديها ومواعيدها (من غير طلاب ولا درجات)" />
       <div className="px-5 pb-5 space-y-4">
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="إلى العام الدراسي">{(id) => <Input id={id} dir="ltr" value={target.academic_year} onChange={(e) => setTarget({ ...target, academic_year: e.target.value })} />}</Field>
           <Field label="الترم">{(id) => <Select id={id} value={target.semester} onChange={(e) => setTarget({ ...target, semester: e.target.value })}>{Object.entries(SEMESTER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
         </div>
@@ -140,7 +140,7 @@ function BrandingCard() {
     <Card>
       <CardHeader icon={ImageIcon} title="هوية الكلية" subtitle="الاسم واللوجو بيظهروا في صفحة الدخول والقائمة وشاشة الحضور" />
       <div className="px-5 pb-5 space-y-4">
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="اسم الجامعة">{(id) => <Input id={id} value={form.university} onChange={(e) => setForm({ ...form, university: e.target.value })} placeholder="جامعة بورسعيد" />}</Field>
           <Field label="اسم الكلية">{(id) => <Input id={id} value={form.faculty} onChange={(e) => setForm({ ...form, faculty: e.target.value })} placeholder="كلية الهندسة" />}</Field>
         </div>
@@ -240,7 +240,7 @@ function OffsiteCard() {
         <Alert tone="blue">
           الإيميل المرسل لازم يكون Gmail وتعمله <b>App Password</b>: من حساب جوجل ← Security ← 2-Step Verification (شغّله) ← App passwords ← اكتب اسم زي "Portal" ← انسخ الـ 16 حرف هنا. الأحسن تعمل Gmail مخصوص للبوابة.
         </Alert>
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="الإيميل المرسل (Gmail)">{(id) => <Input id={id} dir="ltr" type="email" value={form.user} onChange={set('user')} placeholder="portal.backup@gmail.com" />}</Field>
           <Field label="App Password" hint={data.has_password ? 'محفوظة — سيبها فاضية عشان متتغيرش' : '16 حرف من إعدادات جوجل'}>
             {(id) => <Input id={id} dir="ltr" type="password" autoComplete="new-password" value={form.pass} onChange={set('pass')} placeholder={data.has_password ? '••••••••••••••••' : 'abcd efgh ijkl mnop'} />}
@@ -268,7 +268,7 @@ export default function System() {
   return (
     <>
       <PageHeader title="إعدادات الكلية" subtitle="الهوية، الترم الحالي وتواريخه، النسخ الاحتياطي، وتجهيز ترم جديد" />
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6"><BrandingCard /><TermCard /><BackupsCard /><OffsiteCard /></div>
         <CloneCard />
       </div>

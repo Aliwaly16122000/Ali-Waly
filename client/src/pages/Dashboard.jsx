@@ -61,7 +61,7 @@ function UpcomingExams() {
   return (
     <Card className="mb-6">
       <CardHeader icon={ClipboardList} title="امتحاناتك الجاية" action={<Button variant="ghost" size="sm" to="/exams">الجدول كامل</Button>} />
-      <div className="px-3 pb-3 grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+      <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         {upcoming.map((x) => (
           <Link key={x.id} to="/exams" className="rounded-xl border border-line p-3 hover:border-brand-300">
             <div className="flex items-center justify-between"><Badge tone={daysUntil(x.exam_date) <= 1 ? 'red' : 'amber'}>{untilLabel(x.exam_date)}</Badge><span className="text-xs text-muted">{EXAM_KINDS[x.kind]}</span></div>
@@ -84,7 +84,7 @@ function TodaySchedule() {
       <CardHeader icon={CalendarDays} title="مواعيد النهارده" subtitle={today.length ? `${today.length} مواعيد` : 'مفيش مواعيد النهارده'}
         action={<Button variant="ghost" size="sm" to="/schedule">الجدول كامل</Button>} />
       {today.length > 0 && (
-        <div className="px-2 pb-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-1">
+        <div className="px-2 pb-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
           {today.map((s) => <SlotRow key={s.id} s={s} now={data.now_minutes} today />)}
         </div>
       )}
@@ -149,7 +149,7 @@ function StudentDashboard({ data, user }) {
         <StatCard icon={Award} label="درجات جديدة" value={data.recent_grades.filter((g) => Date.now() - new Date(g.published_at) < 7 * 864e5).length} hint="آخر 7 أيام" tone="violet" />
       </div>
 
-      <div className="grid lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <Card className="lg:col-span-3">
           <CardHeader icon={Clock} title="مطلوب منك" subtitle="الشيتات والمشاريع اللي لسه ما سلمتهاش" />
           {!data.pending.length ? (
@@ -201,7 +201,7 @@ function StudentDashboard({ data, user }) {
         <Card className="lg:col-span-5">
           <CardHeader icon={Megaphone} title="آخر الإعلانات" />
           {!data.announcements.length ? <EmptyState title="لا توجد إعلانات" /> : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 px-5 pb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 px-5 pb-5">
               {data.announcements.map((p) => (
                 <Link key={p.id} to={`/courses/${p.course_id}?tab=${p.type === 'material' ? 'materials' : 'announcements'}`}
                   className="rounded-xl border border-line p-4 hover:border-brand-300 transition-colors">
@@ -251,7 +251,7 @@ function StaffDashboard({ data, user }) {
         </Card>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader icon={ClipboardCheck} title={isDoctor ? 'درجات بانتظار الاعتماد' : 'درجات رفعتها للدكتور'} subtitle="راجع الإحصائيات ثم اعتمد لنشرها للطلاب" />
           {!data.awaiting_approval.length ? <EmptyState title="مفيش درجات منتظرة" /> : (
@@ -309,7 +309,7 @@ function AdminDashboard({ data, user }) {
         <StatCard icon={UserCheck} label="أعضاء هيئة التدريس" value={data.doctors} to="/admin/users?role=doctor" tone="amber" />
         <StatCard icon={Users} label="المعيدون" value={data.tas} to="/admin/users?role=ta" tone="blue" />
       </div>
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader icon={AlertTriangle} title="مواد بدون دكتور" subtitle="أسند عضو هيئة تدريس لكل مادة" />
           {!data.courses_without_staff.length ? <EmptyState title="كل المواد لها دكاترة ✓" /> : (

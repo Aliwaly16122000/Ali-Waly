@@ -40,7 +40,7 @@ function Builder({ onClose, onSaved }) {
   return (
     <Modal open onClose={onClose} size="xl" title="استبيان جديد" subtitle="الطالب بيملاه مرة لكل مادة، والإجابات مجهولة للدكاترة"
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button loading={saving} onClick={save}>حفظ كمسودة</Button></>}>
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <Field label="العنوان">{(id) => <Input id={id} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />}</Field>
         <Field label="وصف (اختياري)">{(id) => <Input id={id} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />}</Field>
       </div>
@@ -55,13 +55,13 @@ function Builder({ onClose, onSaved }) {
       </div>
 
       <p className="font-bold mb-2">المواد</p>
-      <div className="grid sm:grid-cols-3 gap-2 mb-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
         {[['all', 'كل مواد الترم الحالي'], ['filter', 'قسم / فرقة معينة'], ['courses', 'مواد أختارها']].map(([k, l]) => (
           <button key={k} type="button" onClick={() => setTarget({ ...target, mode: k })} className={cx('rounded-xl border p-3 text-sm font-semibold', target.mode === k ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10' : 'border-line')}>{l}</button>
         ))}
       </div>
       {target.mode === 'filter' && (
-        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <Select value={target.department_id} onChange={(e) => setTarget({ ...target, department_id: e.target.value })}><option value="">كل الأقسام</option>{(departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>
           <Select value={target.level} onChange={(e) => setTarget({ ...target, level: e.target.value })}><option value="">كل الفرق</option>{LEVEL_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}</Select>
         </div>
@@ -84,7 +84,7 @@ function Builder({ onClose, onSaved }) {
       </div>
       <div className="space-y-3">
         {questions.map((q, i) => (
-          <div key={q.id} className="rounded-xl border border-line p-3 grid sm:grid-cols-[1fr_11rem_auto] gap-2 items-start">
+          <div key={q.id} className="rounded-xl border border-line p-3 grid grid-cols-1 sm:grid-cols-[1fr_11rem_auto] gap-2 items-start">
             <Input value={q.text} onChange={(e) => upd(i, { text: e.target.value })} placeholder="نص السؤال" />
             <Select value={q.type} onChange={(e) => upd(i, { type: e.target.value, options: e.target.value === 'choice' ? q.options || ['نعم', 'لا'] : undefined })}>
               {Object.entries(QTYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

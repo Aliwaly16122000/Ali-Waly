@@ -14,7 +14,7 @@ export function SurveyList() {
     <>
       <PageHeader title="الاستبيانات" subtitle="رأيك بيوصل للإدارة من غير اسمك — ومحدش من الدكاترة أو المعيدين بيعرف مين كتب إيه" />
       {!data.length ? <Card><EmptyState icon={CheckCircle2} title="مفيش استبيانات مطلوبة منك 👏" /></Card> : (
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {data.map((s) => (
             <Link key={`${s.id}-${s.course_id}`} to={`/surveys/${s.id}/${s.course_id}`}>
               <Card className="p-5 h-full hover:border-brand-300">

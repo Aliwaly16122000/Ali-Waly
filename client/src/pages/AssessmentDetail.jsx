@@ -106,7 +106,7 @@ function StudentView({ a, reload }) {
 
   const pct = published && s?.score !== null && s?.score !== undefined ? (s.score / a.max_score) * 100 : null;
   return (
-    <div className="grid lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
         <Instructions a={a} />
         {a.accepts_submissions ? (

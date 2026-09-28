@@ -12,7 +12,7 @@ export default function StudentGrades({ course }) {
   if (data.locked) return <LockNotice lock={data.locked} />;
   return (
     <>
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard icon={Award} label="مجموعك حتى الآن" value={data.max ? `${num(data.total)} / ${num(data.max)}` : '—'} hint="من الدرجات المعتمدة فقط" />
         <StatCard icon={TrendingUp} label="النسبة والتقدير" value={data.percentage === null ? '—' : `${num(data.percentage, 1)}%`} hint={data.letter ?? ''} tone={pctTone(data.percentage)} />
         <StatCard icon={CalendarCheck} label="نسبة الحضور" value={data.attendance ? `${data.attendance.rate}%` : '—'}

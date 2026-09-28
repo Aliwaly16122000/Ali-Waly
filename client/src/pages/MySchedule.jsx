@@ -39,7 +39,7 @@ export default function MySchedule() {
     <>
       <PageHeader title="جدولي" subtitle="مواعيد المحاضرات والسكاشن الأسبوعية — بيوصلك تذكير قبل كل موعد" />
       {!data.slots.length ? <Card><EmptyState icon={CalendarDays} title="لا توجد مواعيد" description="لم يتم تحديد مواعيد لموادك بعد" /></Card> : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {days.map(({ d, slots }) => (
             <Card key={d} className={cx('overflow-hidden', d === data.today && 'ring-2 ring-brand-500')}>
               <div className={cx('px-4 py-3 border-b border-line flex items-center justify-between', d === data.today ? 'bg-brand-600 text-white' : 'bg-surface-2')}>

@@ -43,7 +43,7 @@ function SlotForm({ course, initial, onClose, onSaved }) {
   return (
     <Modal open onClose={onClose} size="lg" title={initial?.id ? 'تعديل الموعد' : 'موعد جديد'} subtitle="موعد أسبوعي ثابت طول الترم"
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="slot-form" type="submit" loading={saving}>حفظ</Button></>}>
-      <form id="slot-form" onSubmit={submit} className="grid sm:grid-cols-3 gap-4">
+      <form id="slot-form" onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Field label="النوع">{(id) => <Select id={id} value={form.kind} onChange={set('kind')}>{Object.entries(KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
         <Field label="اليوم">{(id) => <Select id={id} value={form.day_of_week} onChange={set('day_of_week')}>{WEEK_ORDER.map((d) => <option key={d} value={d}>{DAY_LABELS[d]}</option>)}</Select>}</Field>
         <Field label="المكان">{(id) => <Input id={id} value={form.location ?? ''} onChange={set('location')} placeholder="مدرج 1" />}</Field>
@@ -54,7 +54,7 @@ function SlotForm({ course, initial, onClose, onSaved }) {
           {(id) => <Select id={id} value={form.staff_id ?? ''} onChange={set('staff_id')}><option value="">الكل</option>{staff.map((s) => <option key={s.id} value={s.id}>{titled(s)}</option>)}</Select>}
         </Field>
 
-        <div className="sm:col-span-3 rounded-2xl border border-line p-4 grid sm:grid-cols-3 gap-4 bg-surface-2">
+        <div className="sm:col-span-3 rounded-2xl border border-line p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 bg-surface-2">
           <p className="sm:col-span-3 font-bold flex items-center gap-2"><BellRing className="size-4 text-brand-500" /> التذكير والحضور التلقائي</p>
           <Field label="تذكير قبلها بـ (دقيقة)" hint="0 = بدون تذكير">{(id) => <Input id={id} type="number" min="0" dir="ltr" value={form.remind_before} onChange={set('remind_before')} />}</Field>
           <Field label="الحضور" className="sm:col-span-2">{(id) => <Select id={id} value={form.attendance_mode} onChange={set('attendance_mode')}>{Object.entries(ATT_MODES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}</Field>
@@ -106,7 +106,7 @@ export default function Schedule({ course }) {
         </div>
       )}
       {!byDay.length ? <Card><EmptyState icon={CalendarDays} title="لم يتم تحديد مواعيد بعد" description={staff ? 'أضف مواعيد المحاضرات والسكاشن' : undefined} /></Card> : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {byDay.map(({ day, slots }) => (
             <Card key={day} className="overflow-hidden">
               <p className="px-5 py-3 font-extrabold border-b border-line bg-surface-2">{DAY_LABELS[day]}</p>

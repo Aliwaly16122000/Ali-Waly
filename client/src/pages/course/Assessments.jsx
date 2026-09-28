@@ -40,7 +40,7 @@ function StudentRow({ a, courseId }) {
 function StaffRow({ a, courseId }) {
   const meta = STATUS_META[a.status];
   return (
-    <Link to={`/courses/${courseId}/assessments/${a.id}`} className="grid sm:grid-cols-[1fr_14rem_auto] items-center gap-4 px-5 py-4 hover:bg-surface-2 border-b border-line last:border-0">
+    <Link to={`/courses/${courseId}/assessments/${a.id}`} className="grid grid-cols-1 sm:grid-cols-[1fr_14rem_auto] items-center gap-4 px-5 py-4 hover:bg-surface-2 border-b border-line last:border-0">
       <div className="flex items-center gap-4 min-w-0">
         <div className="size-11 rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300 grid place-items-center shrink-0"><FileText className="size-5" /></div>
         <div className="min-w-0">

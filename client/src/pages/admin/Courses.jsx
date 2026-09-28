@@ -43,7 +43,7 @@ export function CourseForm({ initial, departments, onClose, onSaved }) {
   return (
     <Modal open onClose={onClose} size="lg" title={initial?.id ? 'تعديل المادة' : 'مادة جديدة'}
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="course-form" type="submit" loading={saving}>حفظ</Button></>}>
-      <form id="course-form" onSubmit={submit} className="grid sm:grid-cols-2 gap-4">
+      <form id="course-form" onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="اسم المادة" className="sm:col-span-2">{(id) => <Input id={id} value={form.name} onChange={set('name')} required placeholder="هياكل البيانات" />}</Field>
         <Field label="كود المادة">{(id) => <Input id={id} dir="ltr" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} required placeholder="CSE321" />}</Field>
         <Field label="الساعات المعتمدة">{(id) => <Input id={id} type="number" min="0" max="12" dir="ltr" value={form.credit_hours} onChange={set('credit_hours')} />}</Field>

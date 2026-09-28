@@ -103,7 +103,7 @@ export default function AttendanceLive() {
           <Button variant="secondary" size="sm" icon={fullscreen ? Minimize : Maximize} onClick={toggleFullscreen} className="bg-white/10 border-white/20 text-white hover:bg-white/20">ملء الشاشة</Button>
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_22rem] gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-8 items-start">
           <div className="text-center">
             {brand.logo_url && <img src={brand.logo_url} alt="" className="size-16 object-contain mx-auto mb-3 bg-white rounded-2xl p-1.5" />}
             <p className="text-white/60 text-sm">{[brand.faculty, brand.university].filter(Boolean).join(' · ')}</p>

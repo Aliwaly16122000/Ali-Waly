@@ -42,7 +42,7 @@ export default function Broadcast() {
               ))}
             </div>
           </Field>
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="القسم">{(id) => <Select id={id} value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}><option value="">كل الأقسام</option>{(departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>}</Field>
             <Field label="الفرقة" hint="تُطبَّق على الطلاب فقط">{(id) => <Select id={id} value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}><option value="">كل الفرق</option>{LEVEL_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}</Select>}</Field>
           </div>

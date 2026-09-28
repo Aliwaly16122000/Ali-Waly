@@ -104,7 +104,7 @@ export default function Courses() {
       {!data.length ? (
         <Card><EmptyState icon={BookOpen} title="لا توجد مواد" description={user.role === 'student' ? 'لم يتم تسجيلك في أي مادة بعد. تواصل مع شؤون الطلاب.' : 'لم يتم إسناد أي مادة لك بعد.'} /></Card>
       ) : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           {filtered.map((c) => <CourseCard key={c.id} c={c} role={user.role} />)}
         </div>
       )}

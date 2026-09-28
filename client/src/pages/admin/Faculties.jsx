@@ -60,7 +60,7 @@ function LeaderForm({ faculties, departments, onClose, onSaved }) {
   return (
     <Modal open onClose={onClose} size="lg" title="تعيين صلاحية متابعة" subtitle="عرض فقط: إحصائيات ومتابعة من غير تعديل"
       footer={<><Button variant="secondary" onClick={onClose}>إلغاء</Button><Button form="lead" type="submit" loading={saving} disabled={!form.user_id}>تعيين</Button></>}>
-      <form id="lead" onSubmit={save} className="grid sm:grid-cols-2 gap-4">
+      <form id="lead" onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="ابحث عن الشخص" className="sm:col-span-2">
           {(id) => (
             <>
@@ -102,7 +102,7 @@ export default function Faculties() {
     <>
       <PageHeader title="الكليات والقيادات" subtitle="هيكل الجامعة: كليات ← أقسام ← فرق، وصلاحيات المتابعة لرؤساء الأقسام والعمداء ورئيس الجامعة"
         actions={<><Button variant="secondary" icon={Crown} onClick={() => setLeading(true)}>تعيين قيادة</Button><Button icon={Plus} onClick={() => setEdit({})}>كلية جديدة</Button></>} />
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
         {faculties.map((f) => (
           <Card key={f.id} className="p-5">
             <div className="flex items-start gap-3">

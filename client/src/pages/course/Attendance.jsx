@@ -56,7 +56,7 @@ function GeoSettings({ course }) {
           <span className="font-semibold">تفعيل التحقق من الموقع في المادة دي</span>
         </label>
         {form.geo_enabled && (
-          <div className="grid sm:grid-cols-3 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
             <Field label="المكان">{(id) => <Input id={id} value={form.geo_label} onChange={(e) => set({ geo_label: e.target.value })} placeholder="مدرج 1 / مبنى الكلية" />}</Field>
             <Field label="المسافة المسموحة">
               {(id) => (
@@ -151,7 +151,7 @@ function StaffAttendance({ course, data, reload }) {
 
   return (
     <>
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <Card className={cx('p-5 sm:col-span-1 bg-gradient-to-br from-brand-600 to-brand-800 text-white border-0 flex flex-col justify-between gap-4', readOnly && 'hidden')}>
           <div>
             <QrCode className="size-8 text-amber-300 mb-2" />
@@ -234,7 +234,7 @@ function StudentAttendance({ data }) {
   const { summary, sessions } = data;
   return (
     <>
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard icon={CalendarCheck} label="نسبة حضورك" value={summary.rate === null ? '—' : `${summary.rate}%`} tone={pctTone(summary.rate)} hint={summary.rate !== null && summary.rate < 75 ? '⚠️ أقل من الحد المطلوب 75%' : undefined} />
         <StatCard icon={CheckCircle2} label="حضرت" value={summary.attended} tone="green" />
         <StatCard icon={XCircle} label="غبت" value={summary.total - summary.attended} tone="red" />
