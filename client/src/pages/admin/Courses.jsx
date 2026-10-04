@@ -87,8 +87,9 @@ function PlanImportModal({ onClose, onDone }) {
           {result.courses_created} مادة جديدة · {result.courses_updated} مادة اتحدثت · {result.slots} ميعاد في الجدول · {result.staff_links} إسناد لهيئة التدريس
           {result.enrolled > 0 && ` · ${result.enrolled} تسجيل طالب في مادة`}
           {result.created.length > 0 && ` · ${result.created.length} حساب جديد`}
+          {result.matched_by_name > 0 && ` · ${result.matched_by_name} طالب كان موجود (اتعرف عليه بالاسم)`}
           {result.departments.length > 0 && ` · قسم جديد: ${result.departments.map((d) => d.name).join('، ')}`}
-          <p className="mt-2">الخطوة الجاية: سجّل الطلبة من "إدارة" المادة ← تسجيل دفعة كاملة.</p>
+          {!result.enrolled && <p className="mt-2">الخطوة الجاية: سجّل الطلبة من "إدارة" المادة ← تسجيل دفعة كاملة.</p>}
         </Alert>
       ) : (
         <>

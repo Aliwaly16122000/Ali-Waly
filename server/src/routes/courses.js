@@ -127,15 +127,32 @@ router.put('/:id/attendance-settings', (req, res) => {
 // ───────────── Posts: announcements & lecture materials ─────────────
 router.get('/:id/posts', (req, res) => {
   const id = toId(req.params.id);
-  courseAccess(req.user, id);
+  const { role } = courseAccess(req.user, id);
+  const staff = role !== 'student';
+  // Staff also get how many enrolled students opened each post (students never see this).
   const posts = db.prepare(`
     SELECT p.id, p.course_id, p.type, p.title, p.body, p.created_at, p.author_id,
            u.name AS author_name, cs.role AS author_role
+           ${staff ? `, (SELECT COUNT(*) FROM post_views v JOIN enrollments e ON e.student_id = v.user_id AND e.course_id = p.course_id
+                        WHERE v.post_id = p.id) AS seen_count` : ''}
     FROM posts p LEFT JOIN users u ON u.id = p.author_id
     LEFT JOIN course_staff cs ON cs.course_id = p.course_id AND cs.user_id = p.author_id
     WHERE p.course_id = ? ORDER BY p.created_at DESC`).all(id);
   const files = attachmentsFor('post', posts.map((p) => p.id));
-  res.json(posts.map((p) => ({ ...p, attachments: files.get(p.id) })));
+  const students = staff ? courseStudentIds(id).length : undefined;
+  res.json(posts.map((p) => ({ ...p, attachments: files.get(p.id), ...(staff && { students_count: students }) })));
+});
+
+/** A student opened the announcements / materials tab: everything of that type there counts as seen. */
+router.post('/:id/posts/seen', (req, res) => {
+  const id = toId(req.params.id);
+  const { role } = courseAccess(req.user, id);
+  const { type } = parse(z.object({ type: z.enum(['announcement', 'material']) }), req.body);
+  if (role === 'student') {
+    db.prepare(`INSERT OR IGNORE INTO post_views (post_id, user_id) SELECT id, ? FROM posts WHERE course_id = ? AND type = ?`)
+      .run(req.user.id, id, type);
+  }
+  res.json({ ok: true });
 });
 
 router.post('/:id/posts', uploadMany.array('files', MAX_FILES), ah(async (req, res) => {
@@ -177,6 +194,19 @@ export function announceGrades(course) {
 }
 
 export const postsRouter = Router();
+
+/** Seen / not seen lists of one post, for the course staff. */
+postsRouter.get('/:id/views', (req, res) => {
+  const post = db.prepare('SELECT id, course_id FROM posts WHERE id = ?').get(toId(req.params.id));
+  if (!post) throw notFound();
+  courseAccess(req.user, post.course_id, READERS);
+  const rows = db.prepare(`
+    SELECT u.id, u.name, u.username, e.section, v.seen_at
+    FROM enrollments e JOIN users u ON u.id = e.student_id
+    LEFT JOIN post_views v ON v.post_id = ? AND v.user_id = u.id
+    WHERE e.course_id = ? ORDER BY v.seen_at IS NULL, v.seen_at DESC, u.name`).all(post.id, post.course_id);
+  res.json({ seen: rows.filter((r) => r.seen_at), unseen: rows.filter((r) => !r.seen_at) });
+});
 
 postsRouter.delete('/:id', (req, res) => {
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(toId(req.params.id));

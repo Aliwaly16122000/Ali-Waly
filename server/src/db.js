@@ -130,6 +130,14 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 CREATE INDEX IF NOT EXISTS idx_posts_course ON posts(course_id, created_at);
 
+-- Which students opened an announcement / material (shown to the course staff only).
+CREATE TABLE IF NOT EXISTS post_views (
+  post_id  INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seen_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (post_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS attendance_sessions (
   id             INTEGER PRIMARY KEY,
   course_id      INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,

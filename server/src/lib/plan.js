@@ -29,6 +29,26 @@ const LEVELS = { 'الإعدادية': 0, 'الاعدادية': 0, 'الأولى
 export const LEVEL_OPTIONS = ['0 - الإعدادية', '1 - الفرقة الأولى', '2 - الفرقة الثانية', '3 - الفرقة الثالثة', '4 - الفرقة الرابعة', '5 - الفرقة الخامسة'];
 
 const text = (v) => (v === null || v === undefined ? '' : String(v).trim());
+
+/** Spelling-insensitive Arabic name key: أ/إ/آ→ا, ى→ي, ة→ه, no diacritics/tatweel, "عبد ال" = "عبدال". */
+export const nameKey = (v) => text(v).replace(/[\u064B-\u0652\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+  .replace(/عبد\s+/g, 'عبد').replace(/\s+/g, ' ');
+
+/** Students without a university code are looked up by name; new ones get a temporary code (T26-001 …). */
+function studentsByName() {
+  const index = new Map();
+  for (const u of db.prepare("SELECT id, username, name FROM users WHERE role = 'student'").all()) {
+    const k = nameKey(u.name);
+    index.set(k, [...(index.get(k) || []), u]);
+  }
+  return index;
+}
+function tempCodes(term) {
+  const prefix = `T${String(term?.academic_year || new Date().getFullYear()).slice(2, 4)}-`;
+  let n = db.prepare('SELECT username FROM users WHERE username LIKE ?').pluck().all(`${prefix}%`)
+    .reduce((max, u) => Math.max(max, Number(u.slice(prefix.length)) || 0), 0);
+  return () => `${prefix}${String(++n).padStart(3, '0')}`;
+}
 const list = (v) => text(v).split(/[,،;\n]+/).map((s) => s.trim()).filter(Boolean);
 
 function parseLevel(v) {
@@ -71,17 +91,31 @@ export function applyPlan(sheets, { term, importUsers }) {
 
   const errors = [];
   const err = (sheet, row, error) => errors.push({ sheet, row, error });
-  const summary = { departments: [], courses_created: 0, courses_updated: 0, staff_links: 0, slots: 0, enrolled: 0, created: [], skipped_users: 0 };
+  const summary = { departments: [], courses_created: 0, courses_updated: 0, staff_links: 0, slots: 0, enrolled: 0, created: [], skipped_users: 0, matched_by_name: 0 };
 
   const run = db.transaction(() => {
     // 1) Accounts. Usernames that already exist are left untouched (no duplicate error).
     const exists = db.prepare('SELECT 1 FROM users WHERE username = ?');
     const staffRows = [];
+    let byName = null;
+    let nextCode = null;
+    const ambiguous = (sheet, row, name) => err(sheet, row, `في أكتر من طالب اسمه "${name}" — اكتب الكود الجامعي`);
     for (const [sheet, role] of Object.entries(PLAN_SHEETS.people)) {
       for (const r of sheets[sheet] || []) {
-        const username = text(r.values['اسم المستخدم'] ?? r.values['الكود الجامعي']);
+        const values = { ...r.values };
+        let username = text(values['اسم المستخدم'] ?? values['الكود الجامعي']);
+        if (!username && role === 'student' && text(values['الاسم بالكامل'])) {
+          byName ??= studentsByName();
+          const hits = byName.get(nameKey(values['الاسم بالكامل'])) || [];
+          if (hits.length > 1) { ambiguous(sheet, r.row, text(values['الاسم بالكامل'])); continue; }
+          if (hits.length === 1) { summary.skipped_users++; summary.matched_by_name++; continue; }
+          nextCode ??= tempCodes(term);
+          username = nextCode();
+          values['الكود الجامعي'] = username;
+          byName.set(nameKey(values['الاسم بالكامل']), [{ username }]); // a repeated row in the file reuses it
+        }
         if (username && exists.get(username)) { summary.skipped_users++; continue; }
-        staffRows.push({ ...r.values, __row: r.row, __sheet: sheet, __role: role });
+        staffRows.push({ ...values, __row: r.row, __sheet: sheet, __role: role });
       }
     }
     if (staffRows.length) {
@@ -163,11 +197,21 @@ export function applyPlan(sheets, { term, importUsers }) {
     // 4) Per-student registrations. A section here overrides the student's; empty keeps it.
     const studentId = db.prepare("SELECT id FROM users WHERE username = ? AND role = 'student'").pluck();
     const enrollments = [];
+    let enrollByName = null; // rebuilt here so it includes the students created above
     for (const { row, values } of enrollRows) {
       const E = PLAN_SHEETS.enroll;
       const username = text(values['الكود الجامعي']);
       const code = text(values['كود المادة']).toUpperCase();
-      const sid = studentId.get(username);
+      let sid = username ? studentId.get(username) : null;
+      if (!username) {
+        const name = text(values['اسم الطالب']);
+        if (!name) { err(E, row, 'اكتب الكود الجامعي أو اسم الطالب'); continue; }
+        enrollByName ??= studentsByName();
+        const hits = enrollByName.get(nameKey(name)) || [];
+        if (hits.length > 1) { ambiguous(E, row, name); continue; }
+        sid = hits[0]?.id;
+        if (!sid) { err(E, row, `طالب غير موجود: ${name} — ضيفه في شيت الطلاب`); continue; }
+      }
       if (!sid) { err(E, row, `طالب غير موجود: ${username}`); continue; }
       const courseId = courseIds.get(code) ?? findCourse.get(code, term.academic_year, term.semester);
       if (!courseId) { err(E, row, `مادة غير موجودة في الترم الحالي: ${code}`); continue; }
@@ -216,6 +260,7 @@ export async function planTemplate() {
     ['4) المواد بتتسجل في الترم الحالي. الجدول بتاع أي مادة في الملف بيتبدل بالكامل بالجدول اللي في الملف، فتقدر تعدل وترفع تاني.'],
     ['5) شيت "الطلاب" (اختياري): حسابات الطلبة. شيت "التسجيل" (اختياري): كل صف = طالب في مادة — للساعات المعتمدة لما كل طالب ليه مواده.'],
     ['   الطالب اللي من غير سكشن بيتبع كل مواعيد السكاشن بتاعة المادة.'],
+    ['   مفيش كود جامعي؟ سيب الكود فاضي: الطالب بيتدوّر عليه بالاسم — لو موجود بيتسجل في المادة، ولو جديد بياخد كود مؤقت (T26-001 …).'],
     ['6) لو في أي خطأ مفيش حاجة بتتغير، وبيظهرلك رقم الصف والمشكلة.'],
     ['7) من غير شيت التسجيل: سجّل الطلبة من "إدارة المادة ← تسجيل دفعة كاملة".'],
   ].forEach(([t, bold]) => { const r = help.addRow([t]); r.font = { name: 'Arial', bold: !!bold, size: bold ? 14 : 11 }; });
