@@ -179,6 +179,51 @@ test('attendance: rotating code, device binding and one device per student', asy
   await doctor.del(`/attendance/${id2}`);
 });
 
+test('attendance: fixed QR stays the same; location sessions check in students near the lecturer, no QR', async () => {
+  const fixed = (await doctor.post('/courses/1/attendance', { title: 'QR ثابت', rotate_seconds: 0 })).data;
+  const t1 = (await doctor.get(`/attendance/${fixed.id}/token`)).data;
+  assert.equal(t1.rotate_seconds, 0);
+  assert.equal(t1.expires_in_ms, 30_000);
+  assert.equal((await doctor.get(`/attendance/${fixed.id}/token`)).data.token, t1.token);
+  assert.equal((await doctor.post('/courses/1/attendance', { title: 'x', rotate_seconds: 3 })).status, 400);
+  const scanned = await student.post('/attendance/scan', { token: t1.token, device_id: 'device-student-one-NEW1' });
+  assert.equal(scanned.status, 200, JSON.stringify(scanned.data));
+  await doctor.del(`/attendance/${fixed.id}`);
+
+  const hall = { lat: 31.2653, lng: 32.3019, accuracy: 12 };
+  assert.equal((await ta.post('/courses/1/attendance', { title: 'بالموقع', mode: 'location' })).status, 400, 'needs the lecturer location');
+  assert.equal((await ta.post('/courses/1/attendance', { title: 'بالموقع', mode: 'location', location: { ...hall, accuracy: 900 } })).status, 400, 'weak GPS');
+  const { id } = (await ta.post('/courses/1/attendance', { title: 'بالموقع', mode: 'location', location: hall, radius: 40 })).data;
+  const tok = (await ta.get(`/attendance/${id}/token`)).data;
+  assert.equal(tok.mode, 'location');
+  assert.equal(tok.token, undefined, 'no QR to share');
+  assert.ok((await student.get('/attendance/open')).data.some((s) => s.id === id && !s.present));
+  assert.deepEqual((await otherStudent.get('/attendance/open')).data.filter((s) => s.id === id), []);
+
+  const at = (dLat, accuracy = 10) => ({ device_id: 'device-student-one-NEW1', location: { lat: hall.lat + dLat, lng: hall.lng, accuracy } });
+  const far = await student.post(`/attendance/${id}/checkin`, at(0.01)); // ~1.1 km
+  assert.equal(far.status, 403);
+  assert.equal(far.data.code, 'too_far');
+  assert.equal((await student.post(`/attendance/${id}/checkin`, at(0, 2000))).status, 400, 'weak student GPS');
+  const near = await student.post(`/attendance/${id}/checkin`, at(0.0003)); // ~33 m
+  assert.equal(near.status, 200, JSON.stringify(near.data));
+  assert.equal(near.data.already, false);
+  assert.equal((await student.post(`/attendance/${id}/checkin`, at(0.0003))).data.already, true);
+  assert.equal((await student2.post(`/attendance/${id}/checkin`, at(0))).status, 403, 'a phone checks in one student only');
+  assert.equal((await otherStudent.post(`/attendance/${id}/checkin`, { ...at(0), device_id: 'device-other-student-01' })).status, 400);
+  const roster = (await ta.get(`/attendance/${id}`)).data.students.find((s) => s.username === '2023001');
+  assert.equal(roster.method, 'location');
+  assert.ok(roster.distance_m > 20 && roster.distance_m < 45);
+  assert.ok((await student.get('/attendance/open')).data.find((s) => s.id === id).present);
+
+  // the QR / code routes don't work for a location session
+  const code = (await doctor.get(`/attendance/${id}/token`)).data.code;
+  assert.equal(code, undefined);
+  assert.equal((await ta.put(`/attendance/${id}/location`, { location: { ...hall, lat: hall.lat + 0.01 } })).status, 200);
+  assert.equal((await student2.post(`/attendance/${id}/checkin`, { device_id: 'device-student-two-0001', location: { ...hall, accuracy: 5 } })).data.code, 'too_far', 'measured from the new spot');
+  await ta.del(`/attendance/${id}`);
+});
+
 test('attendance: one class is one session — opening it again reopens it; deleting follows who opened it', async () => {
   const first = await ta.post('/courses/1/attendance', { title: 'تجربة معيد', duration_minutes: 5 });
   assert.equal(first.data.reused, false);
