@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { ChevronRight, Maximize, Minimize, Square, Plus, Users, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, Maximize, Minimize, Square, Plus, Users, CheckCircle2, MapPin, Crosshair } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { getLocation } from '../lib/device';
 import { useApi } from '../lib/useApi';
 import { useSocketEvent } from '../context/RealtimeContext';
 import { Avatar, Button, ConfirmModal, ErrorState, PageLoader, cx } from '../components/ui';
@@ -83,6 +84,21 @@ export default function AttendanceLive() {
     fetchToken();
   };
 
+  const [pinning, setPinning] = useState(false);
+  const repin = async () => {
+    setPinning(true);
+    try {
+      const location = await getLocation();
+      await api.put(`/attendance/${id}/location`, { location });
+      toast.success(`اتحدد مكانك من جديد (دقة ±${Math.round(location.accuracy)} متر)`);
+      reload(true);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setPinning(false);
+    }
+  };
+
   if (loading && !session) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
 
@@ -93,7 +109,7 @@ export default function AttendanceLive() {
   const secs = Math.floor((remaining % 60000) / 1000);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-brand-900 to-slate-950 text-white">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-slate-950 via-brand-900 to-slate-950 text-white">
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <Link to={`/courses/${session.course_id}?tab=attendance`} className="inline-flex items-center gap-1 text-white/70 hover:text-white"><ChevronRight className="size-5" /> رجوع</Link>
@@ -111,13 +127,29 @@ export default function AttendanceLive() {
             <h1 className="text-3xl sm:text-4xl font-extrabold mt-1">{session.course_name}</h1>
             <p className="text-xl text-white/80 mt-1">{session.title}</p>
 
-            {active ? (
+            {active && token.mode === 'location' ? (
+              <>
+                <div className="relative mx-auto mt-10 size-56 grid place-items-center">
+                  <span className="absolute inset-0 rounded-full bg-emerald-400/20 animate-ping" />
+                  <span className="absolute inset-6 rounded-full bg-emerald-400/20" />
+                  <div className="relative size-28 rounded-full bg-emerald-500 grid place-items-center shadow-2xl shadow-emerald-500/40"><MapPin className="size-14" /></div>
+                </div>
+                <p className="mt-6 text-2xl font-bold">الحضور بالموقع شغال</p>
+                <p className="mt-2 text-white/70 max-w-md mx-auto">أي طالب في نطاق <b className="text-white">{session.geo_radius} متر</b> منك يفتح الإشعار أو صفحة "تسجيل الحضور" وحضوره يتسجل لوحده — من غير QR.</p>
+                <p className="mt-2 text-white/50 text-sm">خلّي موبايلك في القاعة. لو اتحركت لقاعة تانية حدّث مكانك.</p>
+                <Button variant="secondary" size="sm" icon={Crosshair} loading={pinning} onClick={repin} className="mt-4 bg-white/10 border-white/20 text-white hover:bg-white/20">تحديث مكاني</Button>
+                <p className="mt-6 text-2xl font-bold tabular-nums ltr">{String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}</p>
+                <p className="text-white/60 text-sm">متبقي على الإغلاق</p>
+              </>
+            ) : active ? (
               <>
                 <div className="relative inline-block mt-8 rounded-3xl bg-white p-5 sm:p-7 shadow-2xl shadow-brand-500/30">
                   <QRCodeSVG value={qrValue} size={360} level="M" className="w-[min(70vw,360px)] h-auto" />
-                  <div className="absolute inset-x-6 bottom-2 h-1 rounded-full bg-slate-200 overflow-hidden">
-                    <div className="h-full bg-brand-500 transition-[width] duration-300 ease-linear" style={{ width: `${(rotateLeft / (token.rotate_seconds * 1000)) * 100}%` }} />
-                  </div>
+                  {token.rotate_seconds > 0 && (
+                    <div className="absolute inset-x-6 bottom-2 h-1 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full bg-brand-500 transition-[width] duration-300 ease-linear" style={{ width: `${(rotateLeft / (token.rotate_seconds * 1000)) * 100}%` }} />
+                    </div>
+                  )}
                 </div>
                 <p className="mt-6 text-white/70">افتح كاميرا الموبايل أو صفحة "تسجيل الحضور" في التطبيق وامسح الكود</p>
                 <p className="mt-3 text-white/60 text-sm">أو اكتب الكود</p>

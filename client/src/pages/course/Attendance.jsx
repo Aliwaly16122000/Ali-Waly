@@ -101,7 +101,7 @@ function SessionRoster({ sessionId, onChanged, readOnly }) {
           <tr key={s.id}>
             <Td><span className="font-semibold">{s.name}</span> <span className="text-xs text-muted ltr">{s.username}</span></Td>
             <Td className="text-muted text-xs">{s.section}</Td>
-            <Td>{s.recorded_at ? <Badge tone="green">حاضر · {s.method === 'qr' ? 'QR' : s.method === 'code' ? 'كود' : 'يدوي'}{s.distance_m != null ? ` · ${Math.round(s.distance_m)} م` : ''}</Badge> : <Badge tone="red">غائب</Badge>}</Td>
+            <Td>{s.recorded_at ? <Badge tone="green">حاضر · {{ qr: 'QR', code: 'كود', location: 'موقع' }[s.method] || 'يدوي'}{s.distance_m != null ? ` · ${Math.round(s.distance_m)} م` : ''}</Badge> : <Badge tone="red">غائب</Badge>}</Td>
             <Td className="text-left">{!readOnly && <Button size="sm" variant="ghost" onClick={() => toggle(s)}>{s.recorded_at ? 'تسجيل غياب' : 'تسجيل حضور'}</Button>}</Td>
           </tr>
         ))}
@@ -114,7 +114,8 @@ function StaffAttendance({ course, data, reload }) {
   const readOnly = course.my_role === 'observer';
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ title: `محاضرة ${data.sessions.length + 1}`, duration_minutes: 15, rotate_seconds: 15 });
+  const [form, setForm] = useState({ title: `محاضرة ${data.sessions.length + 1}`, duration_minutes: 15, how: 'rotating', rotate_seconds: 15, radius: 50 });
+  const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [deleting, setDeleting] = useState(null);
@@ -136,7 +137,16 @@ function StaffAttendance({ course, data, reload }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const { id, reused } = await api.post(`/courses/${course.id}/attendance`, { ...form, duration_minutes: Number(form.duration_minutes), rotate_seconds: Number(form.rotate_seconds) });
+      const body = { title: form.title, duration_minutes: Number(form.duration_minutes) };
+      if (form.how === 'location') {
+        // Students are measured from where this phone is now, so it has to be in the hall.
+        setLocating(true);
+        try { body.location = await getLocation(); } finally { setLocating(false); }
+        Object.assign(body, { mode: 'location', radius: Number(form.radius) });
+      } else {
+        body.rotate_seconds = form.how === 'fixed' ? 0 : Number(form.rotate_seconds);
+      }
+      const { id, reused } = await api.post(`/courses/${course.id}/attendance`, body);
       if (reused) toast.info('المحاضرة دي اتفتحلها حضور النهارده — اتفتح نفس التسجيل تاني بدل ما يتعمل محاضرة جديدة');
       navigate(`/attendance/${id}/live`);
     } catch (err) {
@@ -156,7 +166,7 @@ function StaffAttendance({ course, data, reload }) {
           <div>
             <QrCode className="size-8 text-amber-300 mb-2" />
             <p className="font-bold text-lg">افتح تسجيل حضور</p>
-            <p className="text-sm text-brand-100">اعرض الـ QR على البروجيكتور والطلاب يعملوا Scan. الكود بيتغير كل بضع ثواني عشان محدش يبعته لزميله.</p>
+            <p className="text-sm text-brand-100">بالـ QR على البروجيكتور (متغير أو ثابت)، أو <b>بالموقع</b>: افتحه من موبايلك في القاعة والطلبة القريبين منك يتسجلوا من غير QR.</p>
           </div>
           <Button variant="secondary" icon={Play} className="bg-white text-brand-700 border-0" onClick={() => setOpen(true)}>بدء التسجيل</Button>
         </Card>
@@ -170,7 +180,7 @@ function StaffAttendance({ course, data, reload }) {
         <Card key={s.id} className="p-4 mb-4 flex flex-wrap items-center gap-3 border-emerald-300 dark:border-emerald-500/40">
           <Radio className="size-5 text-emerald-600 animate-pulse" />
           <p className="font-bold flex-1">{s.title} · مفتوح الآن · {s.present_count} حاضر</p>
-          <Button variant="success" icon={QrCode} to={`/attendance/${s.id}/live`}>عرض الـ QR</Button>
+          <Button variant="success" icon={s.mode === 'location' ? MapPin : QrCode} to={`/attendance/${s.id}/live`}>{s.mode === 'location' ? 'متابعة الحضور' : 'عرض الـ QR'}</Button>
         </Card>
       ))}
 
@@ -207,7 +217,7 @@ function StaffAttendance({ course, data, reload }) {
         message={`هيتم حذف "${deleting?.title}" وكل الحضور المسجل فيها نهائياً — مناسب لو كانت تجربة أو اتفتحت بالغلط.`} confirmLabel="حذف نهائياً" />
 
       <Modal open={open} onClose={() => setOpen(false)} title="بدء تسجيل الحضور" subtitle="هيوصل إشعار للطلاب · لو المحاضرة دي اتفتحلها حضور النهارده هيتفتح نفس التسجيل تاني"
-        footer={<><Button variant="secondary" onClick={() => setOpen(false)}>إلغاء</Button><Button form="att-form" type="submit" icon={Play} loading={saving}>بدء وعرض الـ QR</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setOpen(false)}>إلغاء</Button><Button form="att-form" type="submit" icon={form.how === 'location' ? MapPin : Play} loading={saving}>{locating ? 'بنحدد موقعك…' : form.how === 'location' ? 'بدء بالموقع' : 'بدء وعرض الـ QR'}</Button></>}>
         <form id="att-form" onSubmit={start} className="grid grid-cols-2 gap-4">
           <Field label="عنوان المحاضرة" className="col-span-2">{(id) => <Input id={id} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />}</Field>
           <Field label="مدة التسجيل">
@@ -217,13 +227,42 @@ function StaffAttendance({ course, data, reload }) {
               </Select>
             )}
           </Field>
-          <Field label="تغيير الكود كل">
-            {(id) => (
-              <Select id={id} value={form.rotate_seconds} onChange={(e) => setForm({ ...form, rotate_seconds: e.target.value })}>
-                {[10, 15, 30, 60].map((m) => <option key={m} value={m}>{m} ثانية</option>)}
-              </Select>
-            )}
+          <Field label="طريقة التسجيل" className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                ['rotating', QrCode, 'QR بيتغير', 'الأكثر أماناً — الصورة متتبعتش لحد غايب'],
+                ['fixed', QrCode, 'QR ثابت', 'نفس الكود طول المحاضرة — تقدر تطبعه أو تبعته'],
+                ['location', MapPin, 'بالموقع', 'من غير QR — الطالب القريب منك يتسجل أول ما يفتح'],
+              ].map(([v, Icon, label, hint]) => (
+                <button key={v} type="button" onClick={() => setForm({ ...form, how: v })}
+                  className={cx('rounded-xl border p-3 text-right transition', form.how === v ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 ring-2 ring-brand-500/30' : 'border-line hover:bg-surface-2')}>
+                  <p className="font-bold flex items-center gap-1.5"><Icon className="size-4 text-brand-500" /> {label}</p>
+                  <p className="text-xs text-muted mt-1">{hint}</p>
+                </button>
+              ))}
+            </div>
           </Field>
+          {form.how === 'rotating' && (
+            <Field label="تغيير الكود كل">
+              {(id) => (
+                <Select id={id} value={form.rotate_seconds} onChange={(e) => setForm({ ...form, rotate_seconds: e.target.value })}>
+                  {[10, 15, 30, 60].map((m) => <option key={m} value={m}>{m} ثانية</option>)}
+                </Select>
+              )}
+            </Field>
+          )}
+          {form.how === 'location' && (
+            <>
+              <Field label="النطاق حواليك" className="col-span-2">
+                {(id) => (
+                  <Select id={id} value={form.radius} onChange={(e) => setForm({ ...form, radius: e.target.value })}>
+                    {[[30, 'قاعة صغيرة'], [50, 'قاعة / معمل'], [100, 'مدرج كبير'], [200, 'المبنى كله']].map(([m, l]) => <option key={m} value={m}>{m} متر · {l}</option>)}
+                  </Select>
+                )}
+              </Field>
+              <p className="col-span-2 text-xs text-muted flex gap-1.5"><MapPin className="size-4 shrink-0 text-brand-500" /> افتح من موبايلك وإنت جوه القاعة واسمح بالموقع. الطلبة بيوصلهم إشعار، ولما يفتحوه وهم في النطاق الحضور بيتسجل لوحده. الطالب لازم يفعّل الـ GPS.</p>
+            </>
+          )}
         </form>
       </Modal>
     </>

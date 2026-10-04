@@ -154,7 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_attendance_course ON attendance_sessions(course_i
 CREATE TABLE IF NOT EXISTS attendance_records (
   session_id  INTEGER NOT NULL REFERENCES attendance_sessions(id) ON DELETE CASCADE,
   student_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  method      TEXT NOT NULL DEFAULT 'qr' CHECK (method IN ('qr','code','manual')),
+  method      TEXT NOT NULL DEFAULT 'qr' CHECK (method IN ('qr','code','manual','location')),
   recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (session_id, student_id)
 );
@@ -409,6 +409,27 @@ addColumn('courses', 'geo_label', 'TEXT');
 addColumn('assessments', 'late_policy', "TEXT NOT NULL DEFAULT 'allow'");
 addColumn('assessments', 'grace_hours', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('attendance_sessions', 'schedule_id', 'INTEGER REFERENCES course_schedule(id) ON DELETE SET NULL');
+// mode: 'qr' (rotate_seconds = 0 → fixed QR) or 'location' (no QR: students near the lecturer's phone check in).
+addColumn('attendance_sessions', 'mode', "TEXT NOT NULL DEFAULT 'qr'");
+addColumn('attendance_sessions', 'geo_lat', 'REAL');
+addColumn('attendance_sessions', 'geo_lng', 'REAL');
+addColumn('attendance_sessions', 'geo_accuracy', 'REAL');
+addColumn('attendance_sessions', 'geo_radius', 'INTEGER');
+
+// Older databases: widen attendance_records.method to allow 'location' (CHECK can't be altered in place).
+{
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'attendance_records'").pluck().get();
+  if (sql && !sql.includes("'location'")) {
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec(sql.replace('CREATE TABLE attendance_records', 'CREATE TABLE attendance_records_new').replace("'manual')", "'manual','location')"));
+      db.exec('INSERT INTO attendance_records_new SELECT * FROM attendance_records');
+      db.exec('DROP TABLE attendance_records');
+      db.exec('ALTER TABLE attendance_records_new RENAME TO attendance_records');
+    })();
+    db.pragma('foreign_keys = ON');
+  }
+}
 
 export function getSetting(key, factory) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);

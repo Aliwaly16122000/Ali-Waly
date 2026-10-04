@@ -5,6 +5,7 @@ import { Camera, CameraOff, CheckCircle2, KeyRound, XCircle, QrCode, RotateCcw, 
 import { api } from '../lib/api';
 import { deviceId, deviceLabel, getLocation } from '../lib/device';
 import { Button, Card, Input, PageHeader, Spinner } from '../components/ui';
+import { useApi } from '../lib/useApi';
 
 /** Student check-in: camera QR scanner, 6-digit code fallback, or a deep link (/attend?t=…). */
 export default function Scan() {
@@ -18,6 +19,8 @@ export default function Scan() {
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
+  const { data: openByLocation, reload: reloadOpen } = useApi('/attendance/open');
+  const [nearby, setNearby] = useState({}); // session id → { state: 'checking' | 'ok' | 'error', message }
 
   const stopCamera = useCallback(() => {
     scanner.current?.stop();
@@ -110,6 +113,34 @@ export default function Scan() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [startCamera]);
 
+  // Location sessions (no QR): get one GPS fix and check in to every open one straight away.
+  const checkInNearby = useCallback(async (sessions) => {
+    if (!sessions.length) return;
+    setNearby((n) => ({ ...n, ...Object.fromEntries(sessions.map((x) => [x.id, { state: 'checking' }])) }));
+    let location;
+    try {
+      location = await getLocation();
+    } catch (err) {
+      setNearby((n) => ({ ...n, ...Object.fromEntries(sessions.map((x) => [x.id, { state: 'error', message: err.message }])) }));
+      return;
+    }
+    for (const x of sessions) {
+      try {
+        await api.post(`/attendance/${x.id}/checkin`, { location, device_id: deviceId(), device_label: deviceLabel() });
+        navigator.vibrate?.(120);
+        setNearby((n) => ({ ...n, [x.id]: { state: 'ok' } }));
+      } catch (err) {
+        setNearby((n) => ({ ...n, [x.id]: { state: 'error', message: err.message } }));
+      }
+    }
+  }, []);
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (!openByLocation || autoTried.current) return;
+    autoTried.current = true;
+    checkInNearby(openByLocation.filter((x) => !x.present));
+  }, [openByLocation, checkInNearby]);
+
   const submitCode = (e) => {
     e.preventDefault();
     if (code.length === 6) send({ code });
@@ -118,6 +149,29 @@ export default function Scan() {
   return (
     <div className="max-w-lg mx-auto">
       <PageHeader title="تسجيل الحضور" subtitle="امسح الـ QR المعروض في المدرج أو اكتب الكود اللي تحته" />
+
+      {openByLocation?.map((x) => {
+        const st = x.present ? { state: 'ok' } : nearby[x.id] || { state: 'checking' };
+        return (
+          <Card key={x.id} className={`p-5 mb-4 ${st.state === 'ok' ? 'border-emerald-300 dark:border-emerald-500/40' : st.state === 'error' ? 'border-rose-300 dark:border-rose-500/40' : ''}`}>
+            <div className="flex items-center gap-4">
+              <div className={`size-14 shrink-0 rounded-full grid place-items-center ${st.state === 'ok' ? 'bg-emerald-100 dark:bg-emerald-500/15' : st.state === 'error' ? 'bg-rose-100 dark:bg-rose-500/15' : 'bg-brand-50 dark:bg-brand-500/10'}`}>
+                {st.state === 'ok' ? <CheckCircle2 className="size-8 text-emerald-600" /> : st.state === 'error' ? <XCircle className="size-8 text-rose-600" /> : <MapPin className="size-7 text-brand-500 animate-bounce" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold">{x.course_name}</p>
+                <p className="text-sm text-muted">{x.title} · الحضور بالموقع</p>
+                <p className={`text-sm mt-1 font-semibold ${st.state === 'ok' ? 'text-emerald-600' : st.state === 'error' ? 'text-rose-600' : 'text-muted'}`}>
+                  {st.state === 'ok' ? 'تم تسجيل حضورك ✓' : st.state === 'error' ? st.message : 'بنحدد موقعك ونسجّل حضورك… اسمح بالموقع لو اتطلب'}
+                </p>
+              </div>
+            </div>
+            {st.state === 'error' && (
+              <Button variant="secondary" icon={RotateCcw} className="mt-4 w-full" onClick={() => { reloadOpen(true); checkInNearby([x]); }}>حاول تاني</Button>
+            )}
+          </Card>
+        );
+      })}
 
       {locating && (
         <Card className="p-6 mb-6 text-center">

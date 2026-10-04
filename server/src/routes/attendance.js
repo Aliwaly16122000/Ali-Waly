@@ -16,7 +16,8 @@ import { localNow, toMinutes } from '../lib/clock.js';
  * seconds and a photo sent to an absent friend stops working almost immediately.
  */
 const hmac = (secret, msg) => crypto.createHmac('sha256', secret).update(msg).digest();
-const windowOf = (session, t = Date.now()) => Math.floor(t / (session.rotate_seconds * 1000));
+// rotate_seconds = 0 → a fixed QR/code for the whole session (window 0).
+const windowOf = (session, t = Date.now()) => (session.rotate_seconds ? Math.floor(t / (session.rotate_seconds * 1000)) : 0);
 
 export function tokenFor(session, w = windowOf(session)) {
   const sig = hmac(session.secret, `${session.id}.${w}`).subarray(0, 12).toString('base64url');
@@ -42,7 +43,7 @@ courseAttendance.get('/', (req, res) => {
   const courseId = toId(req.params.courseId);
   const { role } = courseAccess(req.user, courseId);
   const sessions = db.prepare(`
-    SELECT s.id, s.title, s.started_at, s.closes_at, s.closed_at, s.rotate_seconds, s.created_by, u.name AS created_by_name,
+    SELECT s.id, s.title, s.started_at, s.closes_at, s.closed_at, s.rotate_seconds, s.mode, s.created_by, u.name AS created_by_name,
       (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) AS present_count,
       (SELECT r.recorded_at FROM attendance_records r WHERE r.session_id = s.id AND r.student_id = ?) AS my_recorded_at
     FROM attendance_sessions s LEFT JOIN users u ON u.id = s.created_by
@@ -87,21 +88,26 @@ function sessionToReuse(courseId, scheduleId) {
  * again (same timetable slot today, or within 3 hours when there's no slot) reopens the same
  * session instead of adding another lecture to the record. Returns { id, reused }.
  */
-export function openAttendanceSession({ course, title, userId, durationMinutes = 15, rotateSeconds = 15, scheduleId = null }) {
+export function openAttendanceSession({ course, title, userId, durationMinutes = 15, rotateSeconds = 15, scheduleId = null, location = null }) {
   const slot = scheduleId ? db.prepare('SELECT * FROM course_schedule WHERE id = ?').get(scheduleId) : currentSlot(course.id, userId);
   const closesAt = new Date(Date.now() + durationMinutes * 60_000).toISOString();
   const existing = sessionToReuse(course.id, slot?.id ?? null);
+  const mode = location ? 'location' : 'qr';
+  const geo = [location?.lat ?? null, location?.lng ?? null, location?.accuracy ?? null, location?.radius ?? null];
   let id;
   if (existing) {
     const stillOpen = !existing.closed_at && existing.closes_at > nowIso();
-    db.prepare('UPDATE attendance_sessions SET closes_at = ?, closed_at = NULL WHERE id = ?')
-      .run(stillOpen && existing.closes_at > closesAt ? existing.closes_at : closesAt, existing.id);
+    // Reopening keeps the session but takes the way of checking in chosen now.
+    db.prepare(`UPDATE attendance_sessions SET closes_at = ?, closed_at = NULL, rotate_seconds = ?, mode = ?,
+      geo_lat = ?, geo_lng = ?, geo_accuracy = ?, geo_radius = ? WHERE id = ?`)
+      .run(stillOpen && existing.closes_at > closesAt ? existing.closes_at : closesAt, rotateSeconds, mode, ...geo, existing.id);
     id = existing.id;
   } else {
     const { lastInsertRowid } = db.prepare(`
-      INSERT INTO attendance_sessions (course_id, title, created_by, secret, rotate_seconds, started_at, closes_at, schedule_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(course.id, title, userId, crypto.randomBytes(32).toString('hex'),
-      rotateSeconds, nowIso(), closesAt, slot?.id ?? null);
+      INSERT INTO attendance_sessions (course_id, title, created_by, secret, rotate_seconds, started_at, closes_at, schedule_id,
+        mode, geo_lat, geo_lng, geo_accuracy, geo_radius)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(course.id, title, userId, crypto.randomBytes(32).toString('hex'),
+      rotateSeconds, nowIso(), closesAt, slot?.id ?? null, mode, ...geo);
     id = Number(lastInsertRowid);
   }
   const students = slot?.section
@@ -109,7 +115,8 @@ export function openAttendanceSession({ course, title, userId, durationMinutes =
     : courseStudentIds(course.id);
   const sessionTitle = existing?.title ?? title;
   notify(students, {
-    type: 'attendance', title: `تسجيل الحضور مفتوح - ${course.name}`, body: `${sessionTitle} · امسح الـ QR من المدرج`, link: '/scan',
+    type: 'attendance', title: `تسجيل الحضور مفتوح - ${course.name}`, link: '/scan',
+    body: mode === 'location' ? `${sessionTitle} · افتح الإشعار وإنت في القاعة وحضورك هيتسجل بموقعك` : `${sessionTitle} · امسح الـ QR من المدرج`,
   });
   return { id, reused: !!existing };
 }
@@ -118,14 +125,29 @@ courseAttendance.post('/', (req, res) => {
   const courseId = toId(req.params.courseId);
   const { course } = courseAccess(req.user, courseId, ['doctor', 'ta']);
   assertCurrentTerm(course);
-  const { title, duration_minutes, rotate_seconds } = parse(z.object({
+  const { title, duration_minutes, rotate_seconds, mode, location, radius } = parse(z.object({
     title: z.string().trim().min(2).max(200),
     duration_minutes: z.number().int().min(1).max(240).default(15),
-    rotate_seconds: z.number().int().min(5).max(120).default(15),
-  }), req.body);
-  const { id, reused } = openAttendanceSession({ course, title, userId: req.user.id, durationMinutes: duration_minutes, rotateSeconds: rotate_seconds });
+    // 0 = fixed QR
+    rotate_seconds: z.number().int().min(0).max(120).refine((v) => v === 0 || v >= 5, 'مدة تغيير الكود غير صحيحة').default(15),
+    mode: z.enum(['qr', 'location']).default('qr'),
+    location: LOCATION.optional(),
+    radius: z.number().int().min(10).max(1000).default(50),
+  }).refine((v) => v.mode !== 'location' || v.location, 'لازم نحدد موقعك الأول عشان الطلبة القريبين منك يسجلوا'), req.body);
+  if (mode === 'location' && location.accuracy > MAX_STAFF_ACCURACY) {
+    throw badRequest(`دقة موقعك ضعيفة (حوالي ${Math.round(location.accuracy)} متر) — فعّل الـ GPS أو قرّب من شباك وحاول تاني`);
+  }
+  const { id, reused } = openAttendanceSession({
+    course, title, userId: req.user.id, durationMinutes: duration_minutes, rotateSeconds: rotate_seconds,
+    location: mode === 'location' ? { ...location, radius } : null,
+  });
   res.status(reused ? 200 : 201).json({ id, reused });
 });
+
+const LOCATION = z.object({
+  lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), accuracy: z.number().min(0).max(100000).optional(),
+});
+const MAX_STAFF_ACCURACY = 150;
 
 function loadSession(req, allowed) {
   const s = db.prepare('SELECT * FROM attendance_sessions WHERE id = ?').get(toId(req.params.id));
@@ -133,6 +155,18 @@ function loadSession(req, allowed) {
   const { course } = courseAccess(req.user, s.course_id, allowed);
   return { s, course };
 }
+
+/** Location sessions open right now in the student's courses (the scan page checks them in straight away). */
+router.get('/open', (req, res) => {
+  if (req.user.role !== 'student') return res.json([]);
+  const rows = db.prepare(`
+    SELECT s.id, s.title, s.closes_at, s.closed_at, s.course_id, c.name AS course_name, c.code AS course_code,
+      EXISTS (SELECT 1 FROM attendance_records r WHERE r.session_id = s.id AND r.student_id = e.student_id) AS present
+    FROM attendance_sessions s JOIN enrollments e ON e.course_id = s.course_id AND e.student_id = ?
+    JOIN courses c ON c.id = s.course_id
+    WHERE s.mode = 'location' AND s.closed_at IS NULL AND s.closes_at > ? ORDER BY s.started_at DESC`).all(req.user.id, nowIso());
+  res.json(rows.map(({ closed_at, ...r }) => ({ ...r, present: !!r.present })));
+});
 
 router.get('/:id', (req, res) => {
   const { s, course } = loadSession(req, READERS);
@@ -149,16 +183,30 @@ router.get('/:id', (req, res) => {
 router.get('/:id/token', (req, res) => {
   const { s } = loadSession(req, ['doctor', 'ta']);
   if (!isActive(s)) return res.json({ active: false });
+  if (s.mode === 'location') return res.json({ active: true, mode: 'location', expires_in_ms: 10_000, closes_at: s.closes_at });
   const w = windowOf(s);
   const periodMs = s.rotate_seconds * 1000;
   res.json({
     active: true,
+    mode: 'qr',
     token: tokenFor(s, w),
     code: codeFor(s, w),
-    expires_in_ms: (w + 1) * periodMs - Date.now(),
+    // A fixed QR never changes; the screen still re-checks every 30s to notice closing / extending.
+    expires_in_ms: s.rotate_seconds ? (w + 1) * periodMs - Date.now() : 30_000,
     rotate_seconds: s.rotate_seconds,
     closes_at: s.closes_at,
   });
+});
+
+/** Lecturer re-pins the spot students are measured from (e.g. a better GPS fix inside the hall). */
+router.put('/:id/location', (req, res) => {
+  const { s } = loadSession(req, ['doctor', 'ta']);
+  if (s.mode !== 'location') throw badRequest('المحاضرة دي بالـ QR مش بالموقع');
+  const { location, radius } = parse(z.object({ location: LOCATION, radius: z.number().int().min(10).max(1000).optional() }), req.body);
+  if (location.accuracy > MAX_STAFF_ACCURACY) throw badRequest(`دقة موقعك ضعيفة (حوالي ${Math.round(location.accuracy)} متر) — فعّل الـ GPS وحاول تاني`);
+  db.prepare('UPDATE attendance_sessions SET geo_lat = ?, geo_lng = ?, geo_accuracy = ?, geo_radius = ? WHERE id = ?')
+    .run(location.lat, location.lng, location.accuracy ?? null, radius ?? s.geo_radius, s.id);
+  res.json({ ok: true });
 });
 
 router.post('/:id/close', (req, res) => {
@@ -282,12 +330,13 @@ router.post('/scan', (req, res) => {
     method = 'code';
     const candidates = db.prepare(`
       SELECT s.* FROM attendance_sessions s JOIN enrollments e ON e.course_id = s.course_id AND e.student_id = ?
-      WHERE s.closed_at IS NULL`).all(req.user.id).filter(isActive);
+      WHERE s.closed_at IS NULL AND s.mode = 'qr'`).all(req.user.id).filter(isActive);
     session = candidates.find((s) => validWindows(s).some((w) => codeFor(s, w) === body.code));
     if (!session) throw badRequest('الكود غير صحيح أو انتهت صلاحيته');
   }
 
   if (!isActive(session)) throw badRequest('تم إغلاق تسجيل الحضور لهذه المحاضرة');
+  if (session.mode === 'location') throw badRequest('المحاضرة دي الحضور فيها بالموقع — افتح صفحة تسجيل الحضور وإنت في القاعة');
   const course = db.prepare('SELECT * FROM courses WHERE id = ?').get(session.course_id);
   const courseInfo = { id: course.id, name: course.name, code: course.code };
   if (!db.prepare('SELECT 1 FROM enrollments WHERE course_id = ? AND student_id = ?').get(session.course_id, req.user.id)) {
@@ -296,23 +345,7 @@ router.post('/scan', (req, res) => {
   const done = () => res.json({ ok: true, already: true, course: courseInfo, session: { id: session.id, title: session.title } });
   if (db.prepare('SELECT 1 FROM attendance_records WHERE session_id = ? AND student_id = ?').get(session.id, req.user.id)) return done();
 
-  // ── Device binding ──
-  let bindNow = false;
-  if (DEVICE_BINDING) {
-    if (!body.device_id) throw badRequest('حدّث الصفحة وحاول مرة أخرى', { code: 'device_required' });
-    const bound = db.prepare('SELECT device_id FROM student_devices WHERE user_id = ?').pluck().get(req.user.id);
-    if (bound && bound !== body.device_id) {
-      throw new HttpError(403, 'حسابك مربوط بموبايل تاني. سجّل الحضور من موبايلك، ولو غيّرته تواصل مع شؤون الطلاب لإعادة الربط.', { code: 'device_mismatch' });
-    }
-    const other = db.prepare('SELECT u.name FROM student_devices d JOIN users u ON u.id = d.user_id WHERE d.device_id = ? AND d.user_id != ?')
-      .pluck().get(body.device_id, req.user.id);
-    const usedInSession = db.prepare('SELECT 1 FROM attendance_records WHERE session_id = ? AND device_id = ? AND student_id != ?')
-      .get(session.id, body.device_id, req.user.id);
-    if (other || usedInSession) {
-      throw new HttpError(403, 'هذا الموبايل مسجّل لطالب آخر. كل طالب يسجل الحضور من موبايله فقط.', { code: 'device_used' });
-    }
-    bindNow = !bound;
-  }
+  const bindNow = checkDevice(session, req.user, body.device_id);
 
   // ── Location (optional per course) ──
   let geo = {};
@@ -331,11 +364,69 @@ router.post('/scan', (req, res) => {
   }
 
   const fresh = record(session, req.user, method, { deviceId: body.device_id, ...geo });
-  if (fresh && bindNow) {
-    db.prepare('INSERT OR IGNORE INTO student_devices (user_id, device_id, label, bound_at) VALUES (?, ?, ?, ?)')
-      .run(req.user.id, body.device_id, body.device_label || null, nowIso());
-  }
+  if (fresh && bindNow) bindDevice(req.user, body);
   res.json({ ok: true, already: !fresh, course: courseInfo, session: { id: session.id, title: session.title } });
+});
+
+/**
+ * Each student account is bound to the first phone it checks in from; other phones are refused
+ * until the admin resets it, and one phone can't check in two students. Returns whether to bind now.
+ */
+function checkDevice(session, user, deviceId) {
+  if (!DEVICE_BINDING) return false;
+  if (!deviceId) throw badRequest('حدّث الصفحة وحاول مرة أخرى', { code: 'device_required' });
+  const bound = db.prepare('SELECT device_id FROM student_devices WHERE user_id = ?').pluck().get(user.id);
+  if (bound && bound !== deviceId) {
+    throw new HttpError(403, 'حسابك مربوط بموبايل تاني. سجّل الحضور من موبايلك، ولو غيّرته تواصل مع شؤون الطلاب لإعادة الربط.', { code: 'device_mismatch' });
+  }
+  const other = db.prepare('SELECT 1 FROM student_devices WHERE device_id = ? AND user_id != ?').get(deviceId, user.id);
+  const usedInSession = db.prepare('SELECT 1 FROM attendance_records WHERE session_id = ? AND device_id = ? AND student_id != ?')
+    .get(session.id, deviceId, user.id);
+  if (other || usedInSession) {
+    throw new HttpError(403, 'هذا الموبايل مسجّل لطالب آخر. كل طالب يسجل الحضور من موبايله فقط.', { code: 'device_used' });
+  }
+  return !bound;
+}
+
+const bindDevice = (user, body) => db.prepare('INSERT OR IGNORE INTO student_devices (user_id, device_id, label, bound_at) VALUES (?, ?, ?, ?)')
+  .run(user.id, body.device_id, body.device_label || null, nowIso());
+
+/**
+ * Location check-in (no QR): the lecturer opened the session from their phone in the hall;
+ * a student whose phone is within the radius of that spot is marked present.
+ */
+router.post('/:id/checkin', (req, res) => {
+  if (req.user.role !== 'student') throw new HttpError(403, 'تسجيل الحضور متاح للطلاب فقط');
+  const body = parse(z.object({
+    device_id: z.string().trim().min(16).max(100).optional(),
+    device_label: z.string().trim().max(120).optional(),
+    location: LOCATION,
+  }), req.body);
+  const session = db.prepare('SELECT * FROM attendance_sessions WHERE id = ?').get(toId(req.params.id));
+  if (!session) throw notFound('جلسة الحضور غير موجودة');
+  const course = db.prepare('SELECT id, name, code FROM courses WHERE id = ?').get(session.course_id);
+  if (!db.prepare('SELECT 1 FROM enrollments WHERE course_id = ? AND student_id = ?').get(session.course_id, req.user.id)) {
+    throw badRequest(`أنت غير مسجل في مادة ${course.name}`);
+  }
+  if (session.mode !== 'location') throw badRequest('المحاضرة دي بالـ QR — امسح الكود اللي على الشاشة');
+  if (!isActive(session)) throw badRequest('تم إغلاق تسجيل الحضور لهذه المحاضرة');
+  const result = { ok: true, course, session: { id: session.id, title: session.title } };
+  if (db.prepare('SELECT 1 FROM attendance_records WHERE session_id = ? AND student_id = ?').get(session.id, req.user.id)) {
+    return res.json({ ...result, already: true });
+  }
+  const bindNow = checkDevice(session, req.user, body.device_id);
+
+  const { lat, lng, accuracy = 0 } = body.location;
+  if (accuracy > 500) throw badRequest('دقة الموقع ضعيفة جداً — فعّل الـ GPS (الموقع الدقيق) وحاول تاني', { code: 'weak_gps' });
+  const distance = distanceMeters({ lat, lng }, { lat: session.geo_lat, lng: session.geo_lng });
+  // Both phones' GPS error (indoors) counts in the student's favour, capped so it can't be stretched far.
+  const slack = Math.min(accuracy, 100) + Math.min(session.geo_accuracy ?? 0, 50);
+  if (distance - slack > session.geo_radius) {
+    throw new HttpError(403, `إنت بعيد عن مكان المحاضرة (حوالي ${Math.round(distance)} متر). لازم تكون في القاعة عشان يتسجل حضورك.`, { code: 'too_far', distance: Math.round(distance) });
+  }
+  const fresh = record(session, req.user, 'location', { deviceId: body.device_id, lat, lng, distance: Math.round(distance) });
+  if (fresh && bindNow) bindDevice(req.user, body);
+  res.json({ ...result, already: !fresh });
 });
 
 export default router;
