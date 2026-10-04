@@ -422,6 +422,49 @@ test('admin: department plan creates courses, staff and timetable in one go (all
   const enrolled = (await admin.get(`/admin/courses/${course.id}/enrollments`)).data;
   assert.deepEqual(enrolled.map((e) => [e.username, e.section]).sort(), [['CH9001', null], ['CH9002', '2']]);
   assert.equal((await upload()).data.enrolled, 0, 're-uploading does not register twice');
+
+  // No university code: existing students are found by name (spelling-insensitive), new ones get a temporary code.
+  const variant = `${student.user.name.replace(/ي/g, 'ى').replace(/ا/g, 'أ')}  `;
+  fill('الطلاب', 4, [variant, '', 'PLNCH', '3 - الفرقة الثالثة']);
+  fill('الطلاب', 5, ['طالب جديد من غير كود', '', 'PLNCH', '3 - الفرقة الثالثة']);
+  fill('التسجيل', 4, ['', 'PLN101', '', variant]);
+  fill('التسجيل', 5, ['', 'PLN101', '', 'طالب جديد من غير كود']);
+  const byName = await upload();
+  assert.equal(byName.status, 200, JSON.stringify(byName.data));
+  assert.equal(byName.data.matched_by_name, 1);
+  assert.equal(byName.data.created.length, 1);
+  assert.match(byName.data.created[0].username, /^T\d\d-\d{3}$/);
+  assert.equal(byName.data.enrolled, 2);
+  const names = (await admin.get(`/admin/courses/${course.id}/enrollments`)).data.map((e) => e.username);
+  assert.ok(names.includes('2023001') && names.includes(byName.data.created[0].username));
+  const third = await upload();
+  assert.equal(third.data.created.length, 0, 'the new student is matched by name next time');
+  assert.equal(third.data.matched_by_name, 2);
+  fill('التسجيل', 6, ['', 'PLN101', '', 'اسم مش موجود خالص']);
+  assert.equal((await upload()).status, 400);
+});
+
+test('posts: staff see which students opened an announcement; students never see it', async () => {
+  const fd = new FormData();
+  fd.append('type', 'announcement');
+  fd.append('title', 'إعلان المشاهدات');
+  const { id } = (await doctor.post('/courses/1/posts', fd)).data;
+  const mine = () => doctor.get('/courses/1/posts').then((r) => r.data.find((p) => p.id === id));
+  assert.equal((await mine()).seen_count, 0);
+  assert.ok((await mine()).students_count >= 1);
+  const asStudent = (await student.get('/courses/1/posts')).data.find((p) => p.id === id);
+  assert.equal(asStudent.seen_count, undefined);
+  assert.equal(asStudent.students_count, undefined);
+
+  assert.equal((await student.post('/courses/1/posts/seen', { type: 'announcement' })).status, 200);
+  await student.post('/courses/1/posts/seen', { type: 'announcement' }); // idempotent
+  await doctor.post('/courses/1/posts/seen', { type: 'announcement' }); // staff aren't counted
+  assert.equal((await mine()).seen_count, 1);
+  const views = (await ta.get(`/posts/${id}/views`)).data;
+  assert.deepEqual(views.seen.map((s) => s.username), ['2023001']);
+  assert.ok(!views.unseen.some((s) => s.username === '2023001'));
+  assert.equal((await student.get(`/posts/${id}/views`)).status, 403);
+  await doctor.del(`/posts/${id}`);
 });
 
 test('calendar: term week, holidays cancel classes and stop timetable reminders', async () => {

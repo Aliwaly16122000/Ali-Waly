@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Megaphone, BookOpen, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Megaphone, BookOpen, Plus, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, toForm } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
 import { useAuth } from '../../context/AuthContext';
 import { timeAgo, titled } from '../../lib/format';
-import { AttachmentLinks, Avatar, Badge, Button, Card, ConfirmModal, EmptyState, ErrorState, Field, FilesDrop, Input, Modal, PageLoader, Textarea } from '../../components/ui';
+import { AttachmentLinks, Avatar, Badge, Button, Card, ConfirmModal, EmptyState, ErrorState, Field, FilesDrop, Input, Modal, PageLoader, Segmented, Textarea } from '../../components/ui';
 
 export default function Posts({ course, type }) {
   const { user } = useAuth();
@@ -14,8 +14,15 @@ export default function Posts({ course, type }) {
   const [form, setForm] = useState({ title: '', body: '', files: [] });
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState(null);
+  const [views, setViews] = useState(null);
   const staff = ['doctor', 'ta', 'admin'].includes(course.my_role);
   const isMaterial = type === 'material';
+  const hasPosts = !!data?.some((p) => p.type === type);
+
+  // Opening the tab marks its posts as seen (only students are counted).
+  useEffect(() => {
+    if (course.my_role === 'student' && hasPosts) api.post(`/courses/${course.id}/posts/seen`, { type }).catch(() => {});
+  }, [course.id, course.my_role, type, hasPosts]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -72,6 +79,11 @@ export default function Posts({ course, type }) {
                   <h3 className="text-lg font-bold mt-2">{p.title}</h3>
                   {p.body && <p className="text-ink/85 mt-1 whitespace-pre-line leading-relaxed">{p.body}</p>}
                   <AttachmentLinks attachments={p.attachments} className="mt-3" />
+                  {p.students_count > 0 && (
+                    <button onClick={() => setViews(p)} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-brand-600">
+                      <Eye className="size-4" /> شافه {p.seen_count} من {p.students_count}
+                    </button>
+                  )}
                 </div>
                 {staff && (course.my_role !== 'ta' || p.author_id === user.id) && (
                   <button onClick={() => setToDelete(p)} className="p-2 rounded-lg text-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" aria-label="حذف"><Trash2 className="size-4" /></button>
@@ -90,7 +102,41 @@ export default function Posts({ course, type }) {
           <Field label={isMaterial ? 'الملفات' : 'مرفقات (اختياري)'}><FilesDrop files={form.files} onChange={(files) => setForm({ ...form, files })} hint="PDF, PPTX, DOCX, ZIP — حتى 20 ميجا للملف" /></Field>
         </form>
       </Modal>
+      {views && <ViewsModal key={views.id} post={views} onClose={() => setViews(null)} />}
       <ConfirmModal open={!!toDelete} onClose={() => setToDelete(null)} onConfirm={remove} title="حذف المنشور" message={`هل أنت متأكد من حذف "${toDelete?.title}"؟`} confirmLabel="حذف" />
     </>
+  );
+}
+
+/** Who opened a post and who didn't yet — staff only. */
+function ViewsModal({ post, onClose }) {
+  const { data } = useApi(`/posts/${post.id}/views`);
+  const [tab, setTab] = useState('unseen');
+  const rows = data?.[tab] || [];
+  return (
+    <Modal open onClose={onClose} title="مين شاف المنشور" subtitle={post.title}>
+      {!data ? <PageLoader /> : (
+        <>
+          <Segmented className="mb-4" value={tab} onChange={setTab}
+            options={[{ value: 'unseen', label: `لسه ما شافوش (${data.unseen.length})` }, { value: 'seen', label: `شافوه (${data.seen.length})` }]} />
+          {!rows.length ? (
+            <p className="text-center text-sm text-muted py-6">{tab === 'seen' ? 'لسه محدش فتحه' : 'كل الطلبة شافوه 👌'}</p>
+          ) : (
+            <ul className="divide-y divide-line max-h-96 overflow-y-auto">
+              {rows.map((s) => (
+                <li key={s.id} className="flex items-center gap-3 py-2">
+                  <Avatar name={s.name} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">{s.name}</p>
+                    <p className="text-xs text-muted"><span dir="ltr">{s.username}</span></p>
+                  </div>
+                  {s.seen_at && <span className="text-xs text-muted shrink-0">{timeAgo(s.seen_at)}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
